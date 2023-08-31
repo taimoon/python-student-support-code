@@ -14,38 +14,28 @@ class Compiler:
     ############################################################################
     # Remove Complex Operands
     ############################################################################
-
+    def rco_atom(self, e: expr) -> Tuple[expr, Temporaries]:
+        e,bs = self.rco_exp(e,False)
+        tmp = Name(generate_name('tmp'))
+        bs += [(tmp,e)]
+        e = tmp
+        return e,bs
+    
     def rco_exp(self, e: expr, need_atomic: bool) -> Tuple[expr, Temporaries]:
-        # YOUR CODE HERE
+        if need_atomic is True:
+            return self.rco_atom(e)
         match e:
             case BinOp(left,op,right):
-                op = op.__class__()
                 l,l_bs = self.rco_exp(left,True)
                 r,r_bs = self.rco_exp(right,True)
                 e = BinOp(l,op,r)
                 bs = l_bs + r_bs
-                if need_atomic is True:
-                    tmp = Name(generate_name('tmp'))
-                    bs += [(tmp,e)]
-                    e = tmp
                 return e,bs
             case UnaryOp(USub(), v):
                 e,bs = self.rco_exp(v,True)
                 e = UnaryOp(USub(),e)
-                if need_atomic is True:
-                    tmp = Name(generate_name('tmp'))
-                    bs += [(tmp,e)]
-                    e = tmp
                 return e,bs
-            case Call(Name('input_int'), []):
-                if need_atomic:
-                    name = Name(generate_name('tmp'))
-                    return name,[(name,e)]
-                else:
-                    return e,[]
-            case Constant(v):
-                return e,[]
-            case Name(id):
+            case Constant()|Name()|Call(Name('input_int'), []):
                 return e,[]
             case _:
                 raise Exception('rco_exp not implemented',ast.dump(e))
@@ -68,7 +58,6 @@ class Compiler:
                 raise Exception('rco_stmt not implemented',s)
 
     def remove_complex_operands(self, p: Module) -> Module:
-        # YOUR CODE HERE
         match p:
             case Module(body):
                 from functools import reduce
@@ -83,15 +72,13 @@ class Compiler:
     ############################################################################
 
     def select_arg(self, e: expr) -> arg:
-        # Immediate(int) | Reg(reg) | Deref(reg,int)
         match e:
             case Constant(v):
                 return Immediate(v)
             case Name(id):
                 return Variable(id)
             case _:
-                raise Exception('select_arg not implemented',e)
-        pass        
+                raise Exception('select_arg not implement',e)
 
     def select_stmt(self, s: stmt) -> List[instr]:
         match s:
@@ -143,9 +130,7 @@ class Compiler:
             case Assign([name],arg):
                 var = self.select_arg(name)
                 arg = self.select_arg(arg)
-                return [
-                    Instr('movq',[arg,var])
-                ]
+                return [Instr('movq',[arg,var])]
             case Expr(e):
                 return self.select_stmt(
                     Assign([Name('_')],e)
@@ -154,7 +139,7 @@ class Compiler:
                 raise NotImplementedError(ast.dump(s))
 
     def select_instructions(self, p: Module) -> X86Program:
-        # YOUR CODE HERE
+        
         match p:
             case Module(body):
                 from functools import reduce
@@ -168,12 +153,11 @@ class Compiler:
     ############################################################################
 
     def assign_homes_arg(self, a: arg, home: Dict[Variable, arg]) -> arg:
-        # YOUR CODE HERE
+        
         match a:
             case Variable(id):
                 if a not in home:
-                    offset = -8*(len(home)+1)
-                    home[a] = Deref('rbp',offset)
+                    home[a] = Deref('rbp',offset = -8*(len(home)+1))
                 return home[a]
             case a if isinstance(a,Immediate|Reg):
                 return a
@@ -182,7 +166,6 @@ class Compiler:
 
     def assign_homes_instr(self, i: instr,
                            home: Dict[Variable, arg]) -> instr:
-        # YOUR CODE HERE
         match i:
             case Instr(op,args):
                 return Instr(op,[self.assign_homes_arg(a,home) for a in args])
@@ -193,11 +176,9 @@ class Compiler:
 
     def assign_homes_instrs(self, ss: List[instr],
                             home: Dict[Variable, arg]) -> List[instr]:
-        # YOUR CODE HERE
         return [self.assign_homes_instr(s,home) for s in ss]
 
     def assign_homes(self, p: X86Program) -> X86Program:
-        # YOUR CODE HERE
         return X86Program(self.assign_homes_instrs(p.body,{}))    
 
     ############################################################################
@@ -205,7 +186,6 @@ class Compiler:
     ############################################################################
 
     def patch_instr(self, i: instr) -> List[instr]:
-        # YOUR CODE HERE
         match i:
             case Instr(op,[Deref(reg_1,off_1),Deref(reg_2,off_2)]):
                 return [
@@ -240,7 +220,7 @@ class Compiler:
     ############################################################################
 
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
-        # YOUR CODE HERE
+        
         prelude = [
             Instr('pushq',[Reg('rbp')]),
             Instr('movq',[Reg('rsp'),Reg('rbp')]),
