@@ -18,9 +18,14 @@ class Compiler(compiler.Compiler):
     callee_save = frozenset(callee_save)
     
     int2reg = ['rcx', 'rdx', 'rsi', 'rdi', 'r8', 'r9', 'r10', 'rbx', 'r12', 'r13', 'r14']
-    int2reg = {i:Reg(id) for i,id in enumerate(int2reg)}
+    int2reg = [Reg(id) for id in int2reg]
+    int2reg = {i:r for i,r in enumerate(int2reg)}
+    
+    bytereg = ['al', 'bl', 'cl', 'dl', 'ah', 'bh', 'ch', 'dh']
     reg_not_used = ['rax','rsp','rbp','r11','r15']
-    reg_not_used = {-i:Reg(id) for i,id in enumerate(reg_not_used,1)}
+    
+    reg_not_used = [Reg(id) for id in reg_not_used] + [ByteReg(r) for r in bytereg]
+    reg_not_used = {-i:r for i,r in enumerate(reg_not_used,1)}
     
     int2reg = {**int2reg,**reg_not_used}
     reg2int = {r:i for i,r in int2reg.items()}
@@ -46,7 +51,6 @@ class Compiler(compiler.Compiler):
                 raise NotImplementedError('read_vars',i)
 
     def write_vars(self, i: instr) -> Set[location]:
-        # YOUR CODE HERE
         match i:
             case Instr('movq'|'subq'|'addq',[r,w]):
                 return {w}
@@ -164,7 +168,7 @@ class Compiler(compiler.Compiler):
     def allocate_register(self,i: instr, colors: Dict[location, int]) -> instr:
         match i:
             case Instr(op,args):
-                return Instr(op,[colors.get(a,a) for a in args])
+                return Instr(op,[a if isinstance(a,Immediate) else colors[a] for a in args])
             case Callq():
                 return i
             case _:
@@ -176,7 +180,7 @@ class Compiler(compiler.Compiler):
         colors,spilled = self.color_graph(graph=graph,
                                           variables=graph.vertices())
         
-        reg_n = len(self.int2reg)
+        reg_n = max(self.int2reg)
         f = lambda n : self.int2reg.get(n,Deref('rbp',-8*(n-reg_n+1)))
         
         assign_map = {loc:f(n) for loc,n in colors.items()}
