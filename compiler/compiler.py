@@ -14,28 +14,34 @@ class Compiler:
     ############################################################################
     # Remove Complex Operands
     ############################################################################
-    def rco_atom(self, e: expr) -> Tuple[expr, Temporaries]:
-        e,bs = self.rco_exp(e,False)
-        tmp = Name(generate_name('tmp'))
-        bs += [(tmp,e)]
-        e = tmp
-        return e,bs
     
     def rco_exp(self, e: expr, need_atomic: bool) -> Tuple[expr, Temporaries]:
-        if need_atomic is True:
-            return self.rco_atom(e)
         match e:
             case BinOp(left,op,right):
-                l,l_bs = self.rco_exp(left,True)
-                r,r_bs = self.rco_exp(right,True)
+                l,l_bs = self.rco_exp(left, True)
+                r,r_bs = self.rco_exp(right, True)
                 e = BinOp(l,op,r)
                 bs = l_bs + r_bs
+                if need_atomic is True:
+                    tmp = Name(generate_name('tmp'))
+                    bs += [(tmp,e)]
+                    e = tmp
                 return e,bs
-            case UnaryOp(USub(), v):
-                e,bs = self.rco_exp(v,True)
-                e = UnaryOp(USub(),e)
+            case UnaryOp(op, v):
+                e,bs = self.rco_exp(v, True)
+                e = UnaryOp(op, e)
+                if need_atomic is True:
+                    tmp = Name(generate_name('tmp'))
+                    bs += [(tmp,e)]
+                    e = tmp
                 return e,bs
-            case Constant()|Name()|Call(Name('input_int'), []):
+            case Call(Name('input_int'), []):
+                if need_atomic:
+                    name = Name(generate_name('tmp'))
+                    return name,[(name,e)]
+                else:
+                    return e,[]
+            case Constant()|Name():
                 return e,[]
             case _:
                 raise Exception('rco_exp not implemented',ast.dump(e))
@@ -136,17 +142,20 @@ class Compiler:
                     Assign([Name('_')],e)
                 )
             case _:
-                raise NotImplementedError(ast.dump(s))
+                raise NotImplementedError(s)
 
+    def select_stmts(self, ss: List[stmt]) -> List[instr]:
+        from functools import reduce
+        from operator import add
+        return reduce(add,[self.select_stmt(s) for s in ss])
+    
     def select_instructions(self, p: Module) -> X86Program:
         
         match p:
             case Module(body):
-                from functools import reduce
-                from operator import add
-                return X86Program(reduce(add,[self.select_stmt(s) for s in body]))
+                return X86Program(self.select_stmts(body))
             case _:
-                raise Exception    
+                raise NotImplementedError('select_instructions unexpected', type(p), p)  
 
     ############################################################################
     # Assign Homes

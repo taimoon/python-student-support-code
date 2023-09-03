@@ -1,4 +1,4 @@
-import compiler
+import compiler.compiler as compiler
 from graph import UndirectedAdjList
 from typing import List, Tuple, Set, Dict
 from ast import *
@@ -57,62 +57,67 @@ class Compiler(compiler.Compiler):
             case Instr('retq',_):
                 return {Reg('rax')}
             case _:
-                raise NotImplementedError('write_vars',i)
+                raise NotImplementedError('write_vars, unexpected: ',i)
 
     def uncover_live(self, p: X86Program) -> Dict[instr, Set[location]]:
         # YOUR CODE HERE
         res = dict()
         after_set = set()
+        before = lambda i: set.union(
+            set.difference(res[i],self.write_vars(i)),
+            self.read_vars(i),
+        )
         for i in reversed(p.body):
             if i in res:
                 raise Exception('uncover live, repeated instr',i,p)
             res[i] = after_set
-            after_set = set.union(
-                set.difference(after_set,self.write_vars(i)),
-                self.read_vars(i),
-            )
+            
+            after_set = before(i)
         return res
 
     ############################################################################
     # Build Interference
     ############################################################################
     
-    def build_interference(self, p: X86Program,
-                           live_after: Dict[instr, Set[location]]) -> UndirectedAdjList:
+    def build_interference(self, instrs:list[instr],
+                           live_after: Dict[Instr, Set[location]]) -> UndirectedAdjList:
         adj = UndirectedAdjList()
-        for i in p.body:
-            match i:
-                case Instr('movq',[s,d]):
-                    adj.add_vertex(d)
-                    for v in live_after[i]:
-                        if v!=s and v!=d:
-                            adj.add_edge(d,v)
-                case Instr('subq'|'addq',[s,d]):
-                    adj.add_vertex(d)
-                    for v in live_after[i]:
-                        if v!=d:
-                            adj.add_edge(d,v)
-                case Instr('negq'|'pushq'|'popq',[d]):
+        for i in instrs:
+            self.add_interference(i,live_after,adj)
+        return adj
+
+    def add_interference(self, i: Instr,
+                           live_after: Dict[instr, Set[location]], adj: UndirectedAdjList) -> None:
+        match i:
+            case Instr('movq'|'movzbq',[s,d]):
+                adj.add_vertex(d)
+                for v in live_after[i]:
+                    if v!=s and v!=d:
+                        adj.add_edge(d,v)
+            case Instr('subq'|'addq',[s,d]):
+                adj.add_vertex(d)
+                for v in live_after[i]:
+                    if v!=d:
+                        adj.add_edge(d,v)
+            case Instr('negq'|'pushq'|'popq',[d]):
+                adj.add_vertex(d)
+                for v in live_after[i]:
+                    if v != d:
+                        adj.add_edge(d,v)
+            case Callq(): # case i if isinstance(i,Callq):
+                for d in self.caller_save:
                     adj.add_vertex(d)
                     for v in live_after[i]:
                         if v != d:
                             adj.add_edge(d,v)
-                case i if isinstance(i,Callq):
-                    for d in self.caller_save:
-                        adj.add_vertex(d)
-                        for v in live_after[i]:
-                            if v != d:
-                                adj.add_edge(d,v)
-                case Instr('retq',_):
-                    d = Reg('rax')
-                    adj.add_vertex(d)
-                    for v in live_after[i]:
-                            if v != d:
-                                adj.add_edge(d,v)
-                case _:
-                    raise NotImplementedError('build_interference',i)
-        return adj
-            
+            case Instr('retq',_):
+                d = Reg('rax')
+                adj.add_vertex(d)
+                for v in live_after[i]:
+                        if v != d:
+                            adj.add_edge(d,v)
+            case _:
+                raise NotImplementedError('add_interference, unexpected',i)
     ############################################################################
     # Allocate Registers
     ############################################################################
@@ -160,7 +165,7 @@ class Compiler(compiler.Compiler):
         match i:
             case Instr(op,args):
                 return Instr(op,[colors.get(a,a) for a in args])
-            case i if isinstance(i,Callq):
+            case Callq():
                 return i
             case _:
                 raise NotImplementedError('allocate_register',i)
@@ -170,6 +175,7 @@ class Compiler(compiler.Compiler):
                            used_callee: Set[Reg]) -> X86Program:
         colors,spilled = self.color_graph(graph=graph,
                                           variables=graph.vertices())
+        
         reg_n = len(self.int2reg)
         f = lambda n : self.int2reg.get(n,Deref('rbp',-8*(n-reg_n+1)))
         
@@ -190,7 +196,7 @@ class Compiler(compiler.Compiler):
 
     def assign_homes(self, pseudo_x86: X86Program) -> X86Program:
         live_after = self.uncover_live(pseudo_x86)
-        graph = self.build_interference(pseudo_x86,live_after)
+        graph = self.build_interference(pseudo_x86.body,live_after)
         
         self.used_callee = set()
         return self.allocate_registers(pseudo_x86,graph,used_callee=self.used_callee)
