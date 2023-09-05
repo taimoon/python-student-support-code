@@ -44,7 +44,7 @@ class Compiler:
             case Constant()|Name():
                 return e,[]
             case _:
-                raise Exception('rco_exp not implemented',ast.dump(e))
+                raise Exception('rco_exp, unexpected',e)
 
     def rco_stmt(self, s: stmt) -> List[stmt]:
         match s:
@@ -62,13 +62,16 @@ class Compiler:
                 return ss
             case _:
                 raise Exception('rco_stmt not implemented',s)
-
+    
+    def rco_stmts(self, ss:list[stmt]) -> list[stmt]:
+        from functools import reduce
+        from operator import add
+        return reduce(add,[self.rco_stmt(s) for s in ss])
+    
     def remove_complex_operands(self, p: Module) -> Module:
         match p:
             case Module(body):
-                from functools import reduce
-                from operator import add
-                return Module(reduce(add,[self.rco_stmt(s) for s in body]))
+                return Module(self.rco_stmts(body))
             case _:
                 raise Exception('remove_complex_operands not implemented')
         
@@ -201,11 +204,11 @@ class Compiler:
                     Instr('movq',[Deref(reg_1,off_1),Reg('rax')]),
                     Instr(op,[Reg('rax'),Deref(reg_2,off_2)])
                 ]
-            case Instr(op,[Immediate(i),arg2])\
+            case Instr(op,[Immediate(i),Deref(reg,off)])\
                 if i > 2**16:
                  return [
                     Instr('movq',[Immediate(i),Reg('rax')]),
-                    Instr(op,[Reg('rax'),arg2])
+                    Instr(op,[Reg('rax'),Deref(reg,off)])
                 ]
             case i if isinstance(i,Instr|Callq):
                 return [i]

@@ -95,11 +95,13 @@ class Compiler(compiler.Compiler):
         match i:
             case Instr('movq'|'movzbq',[s,d]):
                 adj.add_vertex(d)
+                if not isinstance(s,Immediate): adj.add_vertex(s)
                 for v in live_after[i]:
                     if v!=s and v!=d:
                         adj.add_edge(d,v)
             case Instr('subq'|'addq',[s,d]):
                 adj.add_vertex(d)
+                if not isinstance(s,Immediate): adj.add_vertex(s)
                 for v in live_after[i]:
                     if v!=d:
                         adj.add_edge(d,v)
@@ -128,6 +130,9 @@ class Compiler(compiler.Compiler):
     
     def saturation(self,G,colors,u):
         'the set of numbers that are no longer available'
+        if hasattr(u,'key'):
+            u = u.key
+        if u not in G.vertices(): raise Exception(u)
         return set(colors[v] for v in G.adjacent(u))
     
     def color_graph(self, 
@@ -137,6 +142,7 @@ class Compiler(compiler.Compiler):
         '''
         Returns the coloring and the set of spilled variables
         '''
+
         reg2int = lambda v: self.reg2int.get(v,None)
         colors = {v:reg2int(v) for v in graph.vertices()}
         saturation = lambda u : self.saturation(graph,colors,u)
@@ -146,8 +152,7 @@ class Compiler(compiler.Compiler):
         
         variables = frozenset(variables) # variables can change
         dom = set(range(len(variables)))
-        assert(len(graph.vertices()) == len(dom))
-    
+        
         from priority_queue import PriorityQueue
         W = PriorityQueue(less)
         for v in tuple(graph.vertices()):
