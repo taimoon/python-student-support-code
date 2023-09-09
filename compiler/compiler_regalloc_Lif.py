@@ -1,15 +1,8 @@
 from ast import *
-from ast import Dict, Set
-from compiler.compiler import Temporaries
-from utils import (
-    generate_name, Begin, CProgram,
-    make_assigns, make_begin, Goto, stmt,
-    )
+from utils import (CProgram, stmt)
 from graph import UndirectedAdjList, topological_sort, transpose, DirectedAdjList
 from x86_ast import *
 from typing import (List, Set,Tuple,Dict)
-
-from x86_ast import Instr, Reg, X86Program, instr, location
 
 Blocks = Dict[str,List[stmt]]
 from compiler.compiler_Lif import Compiler as Compiler_Lif

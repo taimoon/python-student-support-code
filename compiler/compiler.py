@@ -1,8 +1,6 @@
-import ast
 from ast import *
 from utils import *
 from x86_ast import *
-import os
 from typing import List, Tuple, Set, Dict
 
 Binding = Tuple[Name, expr]
@@ -14,33 +12,28 @@ class Compiler:
     ############################################################################
     # Remove Complex Operands
     ############################################################################
-    
+    def atomize(self,e,bs):
+        tmp = Name(generate_name('tmp'))
+        bs += [(tmp,e)]
+        e = tmp
+        return e,bs
+
     def rco_exp(self, e: expr, need_atomic: bool) -> Tuple[expr, Temporaries]:
+        atomize = self.atomize
         match e:
             case BinOp(left,op,right):
                 l,l_bs = self.rco_exp(left, True)
                 r,r_bs = self.rco_exp(right, True)
                 e = BinOp(l,op,r)
                 bs = l_bs + r_bs
-                if need_atomic is True:
-                    tmp = Name(generate_name('tmp'))
-                    bs += [(tmp,e)]
-                    e = tmp
-                return e,bs
+                return atomize(e,bs) if need_atomic is True else (e,bs)
             case UnaryOp(op, v):
                 e,bs = self.rco_exp(v, True)
                 e = UnaryOp(op, e)
-                if need_atomic is True:
-                    tmp = Name(generate_name('tmp'))
-                    bs += [(tmp,e)]
-                    e = tmp
-                return e,bs
+                return atomize(e,bs) if need_atomic is True else (e,bs)
             case Call(Name('input_int'), []):
-                if need_atomic:
-                    name = Name(generate_name('tmp'))
-                    return name,[(name,e)]
-                else:
-                    return e,[]
+                bs = []
+                return atomize(e,bs) if need_atomic is True else (e,bs)
             case Constant()|Name():
                 return e,[]
             case _:

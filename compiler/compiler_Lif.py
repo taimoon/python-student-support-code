@@ -31,34 +31,26 @@ class Compiler(compiler.Compiler):
     def expand_exp(self,e):
         expand = self.expand_exp
         match e:
-            case BoolOp(And()):
-                return self.expand_conjuct(e)
-            case BoolOp(Or()):
-                return self.expand_disjunct(e)
+            case BoolOp():
+                return self.expand_bool_op(e)
             case Call(name, [*args]):
                 return Call(name, [expand(a) for a in args])
             case _:
                 return e
-
-    def expand_conjuct(self,e):
-        expand = self.expand_conjuct
+    
+    def expand_bool_op(self,e):
+        expand = self.expand_bool_op
         match e:
             case BoolOp(And(),[]):
                 return Constant(True)
             case BoolOp(And(),[e,*es]):
                 return IfExp(e,expand(BoolOp(And(),[*es])),Constant(False))
-            case _:
-                raise NotImplementedError('expand_conjuct',e)
-    
-    def expand_disjunct(self,e):
-        expand = self.expand_disjunct
-        match e:
             case BoolOp(Or(),[]):
                 return Constant(False)
             case BoolOp(Or(),[e,*es]):
                 return IfExp(e,Constant(True),expand(BoolOp(Or(),[*es])))
             case _:
-                raise NotImplementedError('expand_disjunct',e)
+                raise NotImplementedError('expand_bool_op',e)
     
     # single assignment
     def remove_complex_operands(self, p: Module) -> Module:
@@ -66,6 +58,7 @@ class Compiler(compiler.Compiler):
     
     def rco_exp(self, e: expr, need_atomic: bool) -> Tuple[expr, Temporaries]:
         rco_exp = self.rco_exp
+        atomize = self.atomize
         match e:
             case IfExp(test,body,orelse):
                 test,t_bs = rco_exp(test,True)
@@ -77,23 +70,13 @@ class Compiler(compiler.Compiler):
                 orelse = make_begin(bs,orelse)
                 
                 e,bs = IfExp(test,body,orelse),t_bs
-                if need_atomic is True:
-                    tmp = Name(generate_name('tmp'))
-                    bs += [(tmp,e)]
-                    e = tmp
-                return e,bs
+                return atomize(e,bs) if need_atomic is True else (e,bs)
             case Compare(left,[cmp],[right]):
                 l,l_bs = self.rco_exp(left, True)
                 r,r_bs = self.rco_exp(right, True)
                 e = Compare(l,[cmp],[r])
                 bs = l_bs + r_bs
-                
-                if need_atomic is True:
-                    tmp = Name(generate_name('tmp'))
-                    bs += [(tmp,e)]
-                    e = tmp
-                
-                return e,bs
+                return atomize(e,bs) if need_atomic is True else (e,bs)
             case Begin(ss,_e):
                 raise NotImplementedError('rco_exp, unexpected: ', e)
             case _:
@@ -116,14 +99,11 @@ class Compiler(compiler.Compiler):
     
     # explicate
     def explicate_control(self, p: List[stmt]) -> CProgram:
-        explicate_stmt = self.explicate_stmt
         match p:
             case Module(body):
                 cont = [Return(Constant(0))]
                 basic_blocks = {}
                 cont = self.explicate_stmts(body,cont,basic_blocks)
-                # for s in reversed(body):
-                #     cont = explicate_stmt(s,cont,basic_blocks)
                 basic_blocks[label_name('start')] = cont
                 return CProgram(basic_blocks)
             case _:
@@ -176,24 +156,27 @@ class Compiler(compiler.Compiler):
     def explicate_pred(self, cnd, thn: List[stmt], els: List[stmt], basic_blocks: Blocks) \
         -> List[stmt]:
         create_block = self.create_block
-        goto_thn = create_block(thn, basic_blocks)
-        goto_els = create_block(els, basic_blocks)
+        goto_thn = lambda: create_block(thn, basic_blocks)
+        goto_els = lambda: create_block(els, basic_blocks)
         match cnd:
             case Compare(left, [op], [right]):
-                return [If(cnd, goto_thn, goto_els)]
+                return [If(cnd, goto_thn(), goto_els())]
             case Constant(True):
                 return thn
             case Constant(False):
                 return els
             case UnaryOp(Not(), operand):
-                return [If(operand, goto_els, goto_thn)]
+                return [If(operand, goto_els(), goto_thn())]
             case IfExp(test, body, orelse):
                 raise NotImplementedError()
-            case Begin(body, result):                   
-                raise NotImplementedError()
+            case Begin(body, result):
+                cont = self.explicate_pred(result,thn,els,basic_blocks)
+                for s in reversed(body):
+                    cont = self.explicate_stmt(s,cont,basic_blocks)
+                return cont
             case _:
                 cnd = Compare(cnd,[Eq()],[Constant(False)])
-                return [If(cnd, goto_els, goto_thn)]
+                return [If(cnd, goto_els(), goto_thn())]
     
     def explicate_stmt(self, s, cont, basic_blocks) -> List[stmt]:
         match s:
