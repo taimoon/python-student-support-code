@@ -185,6 +185,8 @@ class Compiler(compiler.Compiler):
             case Expr(value):
                 return self.explicate_effect(value,cont,basic_blocks)
             case If(test,body,orelse):
+                # TODO: workaround
+                cont = self.create_block(cont,basic_blocks)
                 body = self.explicate_stmts(body,cont,basic_blocks)
                 orelse = self.explicate_stmts(orelse,cont,basic_blocks)
                 return self.explicate_pred(test,body,orelse,basic_blocks)
