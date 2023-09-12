@@ -1164,8 +1164,20 @@ def test_pass(passname, interp_dict, program_root, ast,
         print() # print a newline to make diff happy
         sys.stdin = stdin
         sys.stdout = stdout
-        result = os.system('diff' + ' -b ' + output_file \
-                           + ' ' + program_root + '.golden')
+        import platform
+        quote = lambda x : f'"{x}"'
+        match platform.system():
+            case 'Linux':
+                result = os.system('diff' + ' -b ' + quote(output_file) \
+                                + ' ' + quote(program_root  + '.golden'))
+            case 'Windows':
+                cmd = 'fc ' + quote(output_file) + ' ' + quote(program_root + '.golden')
+                cmd += ' > nul 2>&1' # get rid of fc output
+                cmd = cmd.replace('/','\\')
+                result = os.system(cmd)
+            case _:
+                raise Exception('File Comparison : Unknown OS', platform.system())
+        
         if result == 0:
             trace('compiler ' + compiler_name + ' success on pass ' + passname \
                   + ' on test\n' + program_root + '\n')
@@ -1430,7 +1442,7 @@ def compile_and_test(compiler, compiler_name,
             dest.write(str(program))
 
         total_passes += 1
-
+        quote = lambda x: f'"{x}"'
         # Run the final x86 program
         emulate_x86 = False
         if emulate_x86:
@@ -1444,14 +1456,32 @@ def compile_and_test(compiler, compiler_name,
         else:
             if platform == 'darwin':
                 os.system('gcc -arch x86_64 runtime.o ' + x86_filename)
+                input_file = program_root + '.in'       # input into stdin
+                output_file = program_root + '.out'     # output onto stdout
+                os.system('./a.out < ' + quote(input_file) + ' > ' + quote(output_file))
+            elif platform in ['Window','win32']:
+                raise NotImplementedError('running x86 is not supported for window platform')
             else:
-                os.system('gcc runtime.o ' + x86_filename)
-            input_file = program_root + '.in'
-            output_file = program_root + '.out'
-            os.system('./a.out < ' + input_file + ' > ' + output_file)
-
-        result = os.system('diff' + ' -b ' + program_root + '.out ' \
-                           + program_root + '.golden')
+                os.system('gcc runtime.o ' + quote(x86_filename))
+            
+                input_file = program_root + '.in'       # input into stdin
+                output_file = program_root + '.out'     # output onto stdout
+                os.system('./a.out < ' + quote(input_file) + ' > ' + quote(output_file))
+            
+        quote = lambda x : f'"{x}"'
+        match platform:
+            case 'linux'|'Linux':
+                result = os.system('diff' + ' -b ' + quote(program_root + '.out') \
+                                + ' ' + quote(program_root  + '.golden'))
+            case 'win32'|'Windows':
+                cmd = 'fc ' + quote(program_root) \
+                    + ' ' + quote(program_root + '.golden') \
+                    + ' > nul 2>&1' # get rid of fc output
+                cmd = cmd.replace('/','\\')
+                result = os.system(cmd)
+            case _:
+                raise Exception('File Comparison : Unknown OS', platform)
+        
         if result == 0:
             successful_passes += 1
             successful_test = 1

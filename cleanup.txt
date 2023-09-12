@@ -1,5 +1,5 @@
 reset
-python3 ./run-tests.py
+python3 ./run-all-tests.py
 find ./tests/ -type f -name "*.out" -exec rm {} \;
 find ./tests/ -type f -name "*.s" -exec rm {} \;
 rm a.out

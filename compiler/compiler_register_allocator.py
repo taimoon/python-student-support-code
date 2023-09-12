@@ -35,14 +35,18 @@ class Compiler(compiler.Compiler):
     ###########################################################################
     # Uncover Live
     ###########################################################################
-
+    @staticmethod
+    def filter_immediate(xs):
+        return {x for x in xs if isinstance(x,location)}
+    
     def read_vars(self, i: instr) -> Set[location]:
         # YOUR CODE HERE
+        filter_immediate = self.filter_immediate
         match i:
-            case Instr('movq'|'subq'|'addq',[r,w]):
-                return {} if isinstance(r,Immediate) else {r}
+            case Instr('movq'|'subq'|'addq'|'xorq',[r,w]):
+                return filter_immediate({r})
             case Instr('negq'|'pushq'|'popq',[a]):
-                return {a}
+                return filter_immediate({a})
             case Callq(_,argc):
                 return set(self.arg_pass_ord[:argc])
             case Instr('retq',_):
@@ -50,34 +54,43 @@ class Compiler(compiler.Compiler):
             case _:
                 raise NotImplementedError('read_vars',i)
 
+    
     def write_vars(self, i: instr) -> Set[location]:
+        filter_immediate = self.filter_immediate
         match i:
-            case Instr('movq'|'subq'|'addq',[r,w]):
-                return {w}
+            case Instr('movq'|'subq'|'addq'|'xorq',[r,w]):
+                return filter_immediate({w})
             case Instr('negq'|'pushq'|'popq',[a]):
-                return {a}
+                return filter_immediate({a})
             case i if isinstance(i,Callq):
                 return set(self.caller_save)
             case Instr('retq',_):
                 return {Reg('rax')}
             case _:
                 raise NotImplementedError('write_vars, unexpected: ',i)
-
+    
     def uncover_live(self, p: X86Program) -> Dict[instr, Set[location]]:
-        # YOUR CODE HERE
-        res = dict()
+        '''
+        Return a dictionary that maps each instruction to its live-after set.
+        '''
+        live_after = dict()
         after_set = set()
+        
         before = lambda i: set.union(
-            set.difference(res[i],self.write_vars(i)),
+            set.difference(live_after[i],self.write_vars(i)),
             self.read_vars(i),
         )
         for i in reversed(p.body):
-            if i in res:
-                raise Exception('uncover live, repeated instr',i,p)
-            res[i] = after_set
-            
+            if i in live_after: raise Exception('uncover live, repeated instr',i,p)
+            live_after[i] = after_set
             after_set = before(i)
-        return res
+        
+        # check
+        assert(live_after[p.body[-1]] == set())
+        assert(before(p.body[0]) == set())
+        for i,j in zip(list(reversed(p.body))[1:],reversed(p.body)):
+            assert(live_after[i] == before(j))
+        return live_after
 
     ############################################################################
     # Build Interference
@@ -99,7 +112,7 @@ class Compiler(compiler.Compiler):
                 for v in live_after[i]:
                     if v!=s and v!=d:
                         adj.add_edge(d,v)
-            case Instr('subq'|'addq',[s,d]):
+            case Instr('subq'|'addq'|'xorq',[s,d]):
                 adj.add_vertex(d)
                 if not isinstance(s,Immediate): adj.add_vertex(s)
                 for v in live_after[i]:
@@ -110,7 +123,7 @@ class Compiler(compiler.Compiler):
                 for v in live_after[i]:
                     if v != d:
                         adj.add_edge(d,v)
-            case Callq(): # case i if isinstance(i,Callq):
+            case Callq():
                 for d in self.caller_save:
                     adj.add_vertex(d)
                     for v in live_after[i]:
@@ -120,8 +133,8 @@ class Compiler(compiler.Compiler):
                 d = Reg('rax')
                 adj.add_vertex(d)
                 for v in live_after[i]:
-                        if v != d:
-                            adj.add_edge(d,v)
+                    if v != d:
+                        adj.add_edge(d,v)
             case _:
                 raise NotImplementedError('add_interference, unexpected',i)
     ############################################################################
@@ -130,6 +143,7 @@ class Compiler(compiler.Compiler):
     
     def saturation(self,G,colors,u):
         'the set of numbers that are no longer available'
+        # workaround
         if hasattr(u,'key'):
             u = u.key
         if u not in G.vertices(): raise Exception(u)
@@ -150,7 +164,6 @@ class Compiler(compiler.Compiler):
         def less(u,v):
             return len(saturation(u)) <= len(saturation(v))
         
-        variables = frozenset(variables) # variables can change
         dom = set(range(len(variables)))
         
         from priority_queue import PriorityQueue
@@ -165,7 +178,7 @@ class Compiler(compiler.Compiler):
             for v in graph.adjacent(u):
                 W.increase_key(v)
             
-        reg_n = len(self.int2reg)
+        reg_n = max(self.int2reg.keys())
         spilled = set(v for v in variables if colors[v] >= reg_n)
         
         return colors,spilled
@@ -225,7 +238,6 @@ class Compiler(compiler.Compiler):
     ###########################################################################
     # Prelude & Conclusion
     ###########################################################################
-
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         align = lambda n : n+(16-n%16)
         C = len(self.used_callee)
