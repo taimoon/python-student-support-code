@@ -1,5 +1,6 @@
 from ast import *
-from utils import (CProgram, stmt)
+from ast import Dict, Set
+from utils import (CProgram,stmt)
 from graph import UndirectedAdjList, topological_sort, transpose, DirectedAdjList
 from x86_ast import *
 from typing import (List, Set,Tuple,Dict)
@@ -24,54 +25,54 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
         cfg = transpose(cfg)
         blocks = topological_sort(cfg)
         
-        live_b4_block = {blocks[0]:set()}        
-        res = {lbl:dict() for lbl in blocks}
+        live_b4_block = {blocks[0]:set()}
+        live_after = {lbl:dict() for lbl in blocks}
         
         def before(cur_label,i):
-            match i:
-                case Jump(label=lbl)|JumpIf(label=lbl):
-                    return live_b4_block[lbl]
-                case _:
-                    return set.union(set.difference(res[cur_label][i],self.write_vars(i)),
-                                     self.read_vars(i),)
-        
+            return set.union(set.difference(live_after[cur_label][i],
+                                            self.write_vars(i)),
+                             self.read_vars(i),)
+
         after_set = set()
-        for lbl,ss in ((lbl,p.body[lbl]) for lbl in blocks if lbl != 'conclusion'):
+        labels = ((lbl,p.body[lbl]) for lbl in blocks if lbl != 'conclusion')
+        for lbl,ss in labels:
             for i in reversed(ss):
+                live_after[lbl][i] = after_set
                 match i:
                     case Jump(label=_lbl):
-                        res[lbl][i] = after_set
-                        after_set = before(_lbl,i)
+                        after_set = live_b4_block[_lbl]
                     case JumpIf(label=_lbl):
-                        res[lbl][i] = after_set
-                        after_set = set.union(after_set,before(_lbl,i))
+                        after_set = set.union(after_set,live_b4_block[_lbl])
                     case _:
-                        res[lbl][i] = after_set
                         after_set = before(lbl,i)
             live_b4_block[lbl] = after_set
-        return res
+        
+        assert(before('start',p.body['start'][0]) == set())
+        return live_after
     
     def read_vars(self, i: instr) -> Set[location]:
+        filter_immediate = self.filter_immediate
         match i:
             case Instr(set,[a]) if set[:3] == 'set':
-                return {a}
+                return filter_immediate({a})
             case Instr('cmpq',[x,y]):
-                return {x,y}
+                return filter_immediate([x,y])
             case Instr('movzbq',[r,w]):
-                return {r}
+                return filter_immediate({r})
             case Jump()|JumpIf():
                 return {}
             case _:
                 return super().read_vars(i)
     
     def write_vars(self, i: instr) -> Set[location]:
+        filter_immediate = self.filter_immediate
         match i:
             case Instr(set,[a]) if set[:3] == 'set':
-                return {a}
+                return filter_immediate({a})
             case Instr('cmpq',_):
-                return {Reg('al')}
+                return {ByteReg('al')}
             case Instr('movzbq',[r,w]):
-                return {w}
+                return filter_immediate({w})
             case Jump()|JumpIf():
                 return {}
             case _:
@@ -82,18 +83,27 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
         self.used_callee = set()
         body:dict = p.body
         
+        self.used_callee = set()
+        graph = self.build_interference(p.body,live_after)
         for lbl,ss in body.items():
             used_callee = set()
-            graph = self.build_interference(ss,live_after[lbl])
             body[lbl] = self.allocate_registers(ss,graph,used_callee=used_callee)
-            self.used_callee = set.union(used_callee)
-        
+            self.used_callee = set.union(self.used_callee,used_callee)
         return CProgram(body)
+    
+    def build_interference(self, instrs: dict[str, list[instr]], live_after: Dict[str,Dict[instr, Set[location]]]) -> UndirectedAdjList:
+        adj = UndirectedAdjList()
+        for lbl,ss in instrs.items():
+            for i in ss:
+                self.add_interference(i,live_after[lbl],adj)
+        return adj
     
     def add_interference(self, i: Instr, live_after: Dict[instr, Set[location]], adj: UndirectedAdjList) -> None:
         match i:
-            case Instr('cmpq',[left,right]):
-                pass
+            case Instr('cmpq',[s,d]):
+                'The second argument of the cmpq instruction must not be an immediate value (such as an integer).'
+                if not isinstance(d,Immediate): adj.add_vertex(d)
+                if not isinstance(s,Immediate): adj.add_vertex(s)
             case Instr(set,[d]) if set[:3] == 'set':
                 adj.add_vertex(d)
                 for v in live_after[i]:
@@ -142,3 +152,4 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
                 return X86Program(body)
             case _:
                 raise NotImplementedError("prelude_and_conclusion unexpected",p)
+    

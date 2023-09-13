@@ -19,6 +19,7 @@ from interp_Cif import InterpCif
 from interp_Lwhile import InterpLwhile
 interpLwhile = InterpLwhile().interp
 interpCif = InterpCif().interp
+
 interp_dict = {
     'shrink':interpLwhile,
     'remove_complex_operands': interpLwhile,
@@ -29,30 +30,41 @@ interp_dict = {
     'prelude_and_conclusion':interp_x86,
 }
 
+def run_all_tests(names,compiler):
+    for name in names:
+        run_tests(name, compiler, name,
+                typecheck_dict,
+                interp_dict)
+    print('*'*100)
+
+
+
+from compiler.compiler import Compiler
+compiler = Compiler()
+print('compiler_Lvar')
+names = ['var']
+run_all_tests(names,compiler)
+
 from compiler.compiler_register_allocator import Compiler
 compiler = Compiler()
+print('compiler_regalloc_Lvar')
 names = ['var']
-for name in names:
-    run_tests(name, compiler, name,
-            typecheck_dict,
-            interp_dict)
-    print('*'*100)
+run_all_tests(names,compiler)
 
-from compiler.compiler_regalloc_Lif import Compiler as Compiler_Lif
-compiler = Compiler_Lif()
+from compiler.compiler_Lif import Compiler
+compiler = Compiler()
+print('compiler_Lif')
 names = ['var','if']
-for name in names:
-    run_tests(name, compiler, name,
-            typecheck_dict,
-            interp_dict)
-    print('*'*100)
+run_all_tests(names,compiler)
 
+from compiler.compiler_regalloc_Lif import Compiler
+compiler = Compiler()
+print('compiler_regalloc_Lif')
+names = ['var','if']
+run_all_tests(names,compiler)
 
-from compiler.compiler_Lwhile import Compiler as Compiler_Lwhile
-compiler = Compiler_Lwhile()
+from compiler.compiler_Lwhile import Compiler
+compiler = Compiler()
+print('compiler_Lwhile')
 names = ['var','if','while']
-for name in names:
-    run_tests(name, compiler, name,
-            typecheck_dict,
-            interp_dict)
-    print('*'*100)
+run_all_tests(names,compiler)
