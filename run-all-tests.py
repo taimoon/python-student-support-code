@@ -68,3 +68,10 @@ compiler = Compiler()
 print('compiler_Lwhile')
 names = ['var','if','while']
 run_all_tests(names,compiler)
+
+
+from compiler.compiler_regalloc_Lwhile import Compiler
+compiler = Compiler()
+print('compiler_regalloc_Lwhile')
+names = ['var','if','while']
+run_all_tests(names,compiler)

@@ -20,6 +20,24 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
                         cfg.add_edge(lbl,dest)
         return cfg
     
+    def live_before(self, i: instr, live_after: dict[instr, set], live_b4_block: dict[str,set]) -> set[instr]:
+        live_before = lambda i: Compiler_Reg_Allocator.live_before(self,i,live_after)
+        match i:
+            case Jump(label=label):
+                return live_b4_block[label]
+            case JumpIf(label=label):
+                return set.union(live_b4_block[label],live_before(i))
+            case _:
+                return live_before(i)
+        
+    def uncover_block(self,instrs,live_after,live_b4_block) -> dict[instr,set[location]]:
+        live_before = lambda i: self.live_before(i,live_after,live_b4_block)
+        after_set = set()
+        for i in reversed(instrs):
+            live_after[i] = after_set
+            after_set = live_before(i)
+        return live_after
+        
     def uncover_live(self, p: CProgram) -> Dict[str,Dict[instr, Set[location]]]:
         cfg = self.control_flow_graph_from(p)
         cfg = transpose(cfg)
@@ -28,26 +46,15 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
         live_b4_block = {blocks[0]:set()}
         live_after = {lbl:dict() for lbl in blocks}
         
-        def before(cur_label,i):
-            return set.union(set.difference(live_after[cur_label][i],
-                                            self.write_vars(i)),
-                             self.read_vars(i),)
-
-        after_set = set()
-        labels = ((lbl,p.body[lbl]) for lbl in blocks if lbl != 'conclusion')
-        for lbl,ss in labels:
-            for i in reversed(ss):
-                live_after[lbl][i] = after_set
-                match i:
-                    case Jump(label=_lbl):
-                        after_set = live_b4_block[_lbl]
-                    case JumpIf(label=_lbl):
-                        after_set = set.union(after_set,live_b4_block[_lbl])
-                    case _:
-                        after_set = before(lbl,i)
-            live_b4_block[lbl] = after_set
+        live_before = self.live_before
         
-        assert(before('start',p.body['start'][0]) == set())
+        labels = (lbl for lbl in blocks if lbl != 'conclusion')
+        for lbl in labels:
+            ss = p.body[lbl]
+            live_after[lbl] = self.uncover_block(ss,live_after[lbl],live_b4_block)
+            live_b4_block[lbl] = live_before(ss[0],live_after[lbl],live_b4_block)
+        
+        assert(live_before(p.body['start'][0],live_after['start'],live_b4_block) == set())
         return live_after
     
     def read_vars(self, i: instr) -> Set[location]:

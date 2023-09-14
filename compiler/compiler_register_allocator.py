@@ -69,27 +69,24 @@ class Compiler(compiler.Compiler):
             case _:
                 raise NotImplementedError('write_vars, unexpected: ',i)
     
+    def live_before(self,i:instr,live_after:dict[instr,set]) -> set[instr]:
+        return set.union(
+            set.difference(live_after[i],self.write_vars(i)),
+            self.read_vars(i),
+        )
+    
     def uncover_live(self, p: X86Program) -> Dict[instr, Set[location]]:
         '''
         Return a dictionary that maps each instruction to its live-after set.
         '''
         live_after = dict()
         after_set = set()
-        
-        before = lambda i: set.union(
-            set.difference(live_after[i],self.write_vars(i)),
-            self.read_vars(i),
-        )
+        live_before = lambda i: self.live_before(i,live_after)
         for i in reversed(p.body):
             if i in live_after: raise Exception('uncover live, repeated instr',i,p)
             live_after[i] = after_set
-            after_set = before(i)
+            after_set = live_before(i)
         
-        # check
-        assert(live_after[p.body[-1]] == set())
-        assert(before(p.body[0]) == set())
-        for i,j in zip(list(reversed(p.body))[1:],reversed(p.body)):
-            assert(live_after[i] == before(j))
         return live_after
 
     ############################################################################

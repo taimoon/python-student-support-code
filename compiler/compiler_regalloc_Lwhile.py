@@ -1,61 +1,41 @@
-# from ast import *
-# from compiler.compiler import Temporaries
-# from utils import (CProgram, stmt,)
-# from graph import UndirectedAdjList, topological_sort, transpose, DirectedAdjList
-# from x86_ast import *
-# from typing import (List, Set,Tuple,Dict)
+from ast import *
+from utils import (CProgram)
+from graph import transpose 
+from x86_ast import *
+from typing import (List, Set,Tuple,Dict)
+from dataflow_analysis import analyze_dataflow
+from compiler.compiler_Lwhile import Compiler as Compiler_Lwhile
+from compiler.compiler_regalloc_Lif import Compiler as Compiler_Regalloc
 
-# from compiler.compiler_Lwhile import Compiler as Compiler_Lwhile
-# from compiler.compiler_regalloc_Lif import Compiler as Compiler_Reg_Alloc
-# from compiler.compiler_regalloc_Lif import Blocks
 
-# def analyze_dataflow(G, transfer, bottom, join):
-#     from graph import deque
-#     from functools import reduce
-#     trans_G = transpose(G)
-#     mapping = dict((v, bottom) for v in G.vertices())
-#     worklist = deque(G.vertices)
-#     while worklist:
-#         node = worklist.pop()
-#         inputs = [mapping[v] for v in trans_G.adjacent(node)]
-#         input = reduce(join, inputs, bottom)
-#         output = transfer(node, input)
-#         if output != mapping[node]:
-#             mapping[node] = output
-#             worklist.extend(G.adjacent(node))
-
-# class Compiler(Compiler_Lwhile,Compiler_Reg_Alloc):
-#     ...
-#     Compiler_Reg_Alloc.uncover_live
-
-#     def uncover_live(self, p: CProgram) -> Dict[str,Dict[instr, Set[location]]]:
-#         super().uncover_live
-#         cfg = self.control_flow_graph_from(p)
-#         cfg = transpose(cfg)
-        
-#         live_bf_block = {lbl:set() for lbl in p.body.keys()}
-#         live_af_block = {lbl:set() for lbl in p.body.keys()}
-#         res = {lbl:dict() for lbl in p.body.keys()}
+class Compiler(Compiler_Lwhile,Compiler_Regalloc):
+    def uncover_live(self, p: CProgram) -> Dict[str,Dict[instr, Set[location]]]:
+        cfg = self.control_flow_graph_from(p)
+        cfg = transpose(cfg)
+        live_bf_block = {lbl:set() for lbl in cfg.vertices()}
+        live_af_block = {lbl:set() for lbl in cfg.vertices()}
+        live_after = {lbl:dict() for lbl in p.body.keys()}
         
         
-#         def before(cur_label,i):
-#             match i:
-#                 case Jump(label=lbl)|JumpIf(label=lbl):
-#                     return live_bf_block[lbl]
-#                 case _:
-#                     return set.union(set.difference(res[cur_label][i],self.write_vars(i)),
-#                                      self.read_vars(i),)
+        def transfer(label,live_after_blk):
+            '''
+            The second parameter transfer should be passed a function that applies liveness analysis to a basic block. It takes two parameters: the label for the block to analyze and the live-after set for that block. The transfer function should return the live-before set for the block. Also, as a side effect, it should update the live-before and live-after sets for each instruction. To implement the transfer function, you should be able to reuse the code you already have for analyzing basic blocks.
+            '''
+            if label == 'conclusion':
+                return set()
+            live_after[label] = {p.body[label][-1]:live_after_blk}
+            live_after[label] = self.uncover_block(p.body[label],live_after[label],live_bf_block)
+            live_bf_cur_block = self.live_before(p.body[label][0],live_after[label],live_bf_block)
+            
+            live_bf_block[label] = live_bf_cur_block
+            live_af_block[label] = live_after[label][p.body[label][-1]]
+            
+            return live_bf_cur_block
         
-#         def transfer(label,live_af_block):
-#             super
-#             for i in p.body[label]:
-#                 ...
-#             return live_bf_block[label]
-        
-#         analyze_dataflow(
-#             G=cfg,
-#             transfer=transfer,
-#             bottom={},
-#             join=set.union
-#         )
-#         return res
+        analyze_dataflow(
+            G=cfg,
+            transfer=transfer,
+            bottom=set(),
+            join=set.union
+        )
+        return live_after
