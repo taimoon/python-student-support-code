@@ -33,10 +33,16 @@ class Compiler(compiler.Compiler):
         match e:
             case BoolOp():
                 return self.expand_bool_op(e)
-            case Call(name, [*args]):
-                return Call(name, [expand(a) for a in args])
-            case _:
+            case Call(fn, [*args]):
+                return Call(fn, [expand(a) for a in args])
+            case BinOp(left,op,right):
+                return BinOp(expand(left),op,expand(right))
+            case UnaryOp(op,_e):
+                return UnaryOp(op,expand(_e))
+            case Constant()|Name():
                 return e
+            case _:
+                raise NotImplementedError('expand_exp, unexpected argument ',e)
     
     def expand_bool_op(self,e):
         expand = self.expand_bool_op
@@ -52,7 +58,7 @@ class Compiler(compiler.Compiler):
             case _:
                 raise NotImplementedError('expand_bool_op',e)
     
-    # single assignment
+    # remove_complex_operands pass
     def remove_complex_operands(self, p: Module) -> Module:
         return super().remove_complex_operands(p)
     
@@ -77,8 +83,6 @@ class Compiler(compiler.Compiler):
                 e = Compare(l,[cmp],[r])
                 bs = l_bs + r_bs
                 return atomize(e,bs) if need_atomic is True else (e,bs)
-            case Begin(ss,_e):
-                raise NotImplementedError('rco_exp, unexpected: ', e)
             case _:
                 return super().rco_exp(e, need_atomic)
     
@@ -86,19 +90,15 @@ class Compiler(compiler.Compiler):
         match s:
             case If(test,body,orelse):
                 test,t_bs = self.rco_exp(test,True)
-                
                 body = self.rco_stmts(body)
-                # body = make_assigns(b_bs) + [body]
-                
                 orelse = self.rco_stmts(orelse)
-                # orelse = make_assigns(e_bs) + [orelse]
                 
                 return make_assigns(t_bs) + [If(test,body,orelse)]
             case _:
                 return super().rco_stmt(s)
     
-    # explicate
-    def explicate_control(self, p: List[stmt]) -> CProgram:
+    # explicate, the input are all atomized
+    def explicate_control(self, p) -> CProgram:
         match p:
             case Module(body):
                 cont = [Return(Constant(0))]
@@ -109,7 +109,7 @@ class Compiler(compiler.Compiler):
             case _:
                 raise NotImplementedError('explicate_control',p)
     
-    def explicate_stmts(self, ss:list[stmt],cont,basic_blocks) -> list[stmt]:
+    def explicate_stmts(self,ss:list[stmt],cont,basic_blocks) -> list[stmt]:
         for s in reversed(ss):
             cont = self.explicate_stmt(s,cont,basic_blocks)
         return cont
@@ -131,7 +131,9 @@ class Compiler(compiler.Compiler):
                 raise NotImplementedError()
             case Begin(body, result):
                 raise NotImplementedError()
-            case Call(Name('print'|'input_int'),_)|BinOp()|Compare():
+            case BinOp()|Compare()|Constant():
+                return cont
+            case Call(Name('print'|'input_int'),_):
                 return self.create_block([Expr(e)] + cont,basic_blocks)
             case _:
                 raise NotImplementedError(self.explicate_effect.__name__,'unexpected: ',e)

@@ -49,9 +49,9 @@ class Compiler:
                 exp,bindings = self.rco_exp(e,False)
                 ss = make_assigns(bindings) + [Expr(exp)]
                 return ss
-            case Assign(name,e):
+            case Assign([Name(var)],e):
                 exp,bindings = self.rco_exp(e,False)
-                ss = make_assigns(bindings) + [Assign(name,exp)]
+                ss = make_assigns(bindings) + [Assign([Name(var)],exp)]
                 return ss
             case _:
                 raise Exception('rco_stmt not implemented',s)
@@ -129,9 +129,13 @@ class Compiler:
                         Instr('movq',[arg,var]),
                         Instr('negq',[var]),
                     ]
-            case Assign([name],arg):
+            case Assign([name],Constant(v)):
                 var = self.select_arg(name)
-                arg = self.select_arg(arg)
+                arg = self.select_arg(Constant(v))
+                return [Instr('movq',[arg,var])]
+            case Assign([name],Name(id)):
+                var = self.select_arg(name)
+                arg = self.select_arg(Name(id))
                 return [Instr('movq',[arg,var])]
             case Expr(e):
                 return self.select_stmt(
@@ -146,7 +150,6 @@ class Compiler:
         return reduce(add,[self.select_stmt(s) for s in ss])
     
     def select_instructions(self, p: Module) -> X86Program:
-        
         match p:
             case Module(body):
                 return X86Program(self.select_stmts(body))

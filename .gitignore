@@ -1,2 +1,7 @@
 **/__pycache__/
 /runtime.o
+*.o
+a.out
+/tests/**/*.out
+/tests/**/*.s
+/tmp/
