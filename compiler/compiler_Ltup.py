@@ -231,8 +231,16 @@ class Compiler(Compiler_Lwhile):
                     Instr('movq',[Immediate(self.attach_tag(sz,t)), Deref('r11',0)]),
                     Instr('movq',[Reg('r11'),var]),
                 ]
-            case Expr(Call(Name('len'), [tup])):
-                raise NotImplementedError()
+            case Assign([name],Call(Name('len'), [tup_exp])):
+                # (2**6-1) & (*tup >> 1) 
+                var = self.select_arg(name)
+                tup_exp = self.select_arg(tup_exp)
+                return [
+                    Instr('movq',[tup_exp,Reg('r11')]),
+                    Instr('movq',[Deref('r11',0),var]),
+                    Instr('sarq',[Immediate(1),var]),
+                    Instr('andq',[Immediate(2**6-1),var]),
+                ]
             case Collect(sz):
                 return [
                     Instr('movq',[Reg('r15'),Reg('rdi')]),

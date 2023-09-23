@@ -35,9 +35,9 @@ interp_dict = {
     'expose_allocation':interpLtup,
     'remove_complex_operands': interpLtup,
     'explicate_control':interpCtup,
-    'select_instructions': interp_x86, # early stop
-    'assign_homes': interp_x86,
-    'patch_instructions': interp_x86,
+    # 'select_instructions': interp_x86, # early stop
+    # 'assign_homes': interp_x86,
+    # 'patch_instructions': interp_x86,
     'prelude_and_conclusion':interp_x86,
 }
 
@@ -68,8 +68,7 @@ if __name__ == '__main__':
         enable_tracing()
     
     if args.run_once is True:
-        path = os.getcwd() + '/tests/tuple/eg.py'
-        # path = os.getcwd() + '/tests/var/add.py'
+        path = os.getcwd() + '/tests/tuple/is_sorted.py'
         run_one_test(path,
                     'if',
                     compiler,
@@ -77,7 +76,7 @@ if __name__ == '__main__':
                     typecheck_dict,
                     interp_dict)
     else:
-        name = 'var'
+        name = 'tuple'
         run_tests(name, compiler, name,
                 typecheck_dict,
                 interp_dict)
