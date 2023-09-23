@@ -187,7 +187,10 @@ class Compiler:
         return [self.assign_homes_instr(s,home) for s in ss]
 
     def assign_homes(self, p: X86Program) -> X86Program:
-        return X86Program(self.assign_homes_instrs(p.body,{}))    
+        home = {}
+        res = X86Program(self.assign_homes_instrs(p.body,home))
+        self.spilled = set(home.keys())
+        return res
 
     ############################################################################
     # Patch Instructions
@@ -228,14 +231,15 @@ class Compiler:
     ############################################################################
 
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
-        
+        sz = len(self.spilled)*8
+        sz = sz if sz%16 == 0 else sz+8
         prelude = [
             Instr('pushq',[Reg('rbp')]),
             Instr('movq',[Reg('rsp'),Reg('rbp')]),
-            Instr('subq',[Immediate(16),Reg('rsp')]),
+            Instr('subq',[Immediate(sz),Reg('rsp')]),
         ]
         conclusion = [
-            Instr('addq',[Immediate(16),Reg('rsp')]),
+            Instr('addq',[Immediate(sz),Reg('rsp')]),
             Instr('popq',[Reg('rbp')]),
             Instr('retq',[]),
         ]

@@ -236,11 +236,11 @@ class Compiler(compiler.Compiler):
     # Prelude & Conclusion
     ###########################################################################
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
+        # TODO
         align = lambda n : n+(16-n%16)
         C = len(self.used_callee)
         S = len(self.spilled)
         A = align(8*S + 8*C) - 8*C
-        
         A = align(A) if A%16 != 0 else A
         
         prelude = [
