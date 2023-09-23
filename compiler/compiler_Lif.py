@@ -39,6 +39,10 @@ class Compiler(compiler.Compiler):
                 return BinOp(expand(left),op,expand(right))
             case UnaryOp(op,_e):
                 return UnaryOp(op,expand(_e))
+            case IfExp(pred,conseq,alter):
+                return IfExp(expand(pred),expand(conseq),expand(alter))
+            case Compare(left,[op],[right]):
+                return Compare(expand(left),[op],[expand(right)])
             case Constant()|Name():
                 return e
             case _:
@@ -265,7 +269,7 @@ class Compiler(compiler.Compiler):
                 home = {}
                 for lbl,ss in body.items():
                     body[lbl] = self.assign_homes_instrs(ss,home)
-                # body = {lbl:self.assign_homes_instrs(ss,home) for lbl,ss in body.items()}
+                self.spilled = set(home.keys())
                 return CProgram(body)
             case _:
                 return super().assign_homes(p)
@@ -307,20 +311,22 @@ class Compiler(compiler.Compiler):
                 return super().patch_instr(i)
     
     def prelude_and_conclusion(self, p: CProgram) -> X86Program:
+        sz = len(self.spilled)*8
+        sz = sz if sz%16 == 0 else sz+8
         prelude = [
             Instr('pushq',[Reg('rbp')]),
             Instr('movq',[Reg('rsp'),Reg('rbp')]),
-            Instr('subq',[Immediate(16),Reg('rsp')]),
-            Jump('start'),
+            Instr('subq',[Immediate(sz),Reg('rsp')]),
         ]
+        jmp = [Jump('start'),]
         conclusion = [
-            Instr('addq',[Immediate(16),Reg('rsp')]),
+            Instr('addq',[Immediate(sz),Reg('rsp')]),
             Instr('popq',[Reg('rbp')]),
             Instr('retq',[]),
         ]
         match p:
             case CProgram(body):
-                body[label_name('main')] = prelude
+                body[label_name('main')] = prelude + jmp
                 body[label_name('conclusion')] = conclusion
                 return X86Program(body)
             case _:

@@ -195,19 +195,23 @@ class Compiler:
     ############################################################################
     # Patch Instructions
     ############################################################################
-
+    def is_mem_ref(self,a:arg):
+        return isinstance(a,Deref)
+    
     def patch_instr(self, i: instr) -> List[instr]:
+        is_ref = self.is_mem_ref
         match i:
-            case Instr(op,[Deref(reg_1,off_1),Deref(reg_2,off_2)]):
+            case Instr(op,args=[arg1,arg2])\
+                if is_ref(arg1) and is_ref(arg2):
                 return [
-                    Instr('movq',[Deref(reg_1,off_1),Reg('rax')]),
-                    Instr(op,[Reg('rax'),Deref(reg_2,off_2)])
+                    Instr('movq',[arg1,Reg('rax')]),
+                    Instr(op,[Reg('rax'),arg2])
                 ]
-            case Instr(op,[Immediate(i),Deref(reg,off)])\
-                if i > 2**16:
+            case Instr(op,[Immediate(i),ref])\
+                if  is_ref(ref) and i > 2**16:
                  return [
                     Instr('movq',[Immediate(i),Reg('rax')]),
-                    Instr(op,[Reg('rax'),Deref(reg,off)])
+                    Instr(op,[Reg('rax'),ref])
                 ]
             case i if isinstance(i,Instr|Callq):
                 return [i]

@@ -15,8 +15,13 @@ from x86_ast import X86Program
 
 '''
 Ltup extends Lwhile
-note:
-only exp[int], constant index is allowed
+But Ltup is very limited such that
+cmp ::= is
+exp ::= exp,…,exp | exp[int] | len(exp)
+LTup ::= stmt*
+where constant index is allowed
+
+root stack pointer (r15)
 '''
 
 class Compiler(Compiler_Lwhile):
@@ -60,18 +65,14 @@ class Compiler(Compiler_Lwhile):
                 return Expr(expose_exp(e))
             case Assign([name],e):
                 return Assign([name],expose_exp(e))
+            case While(exp,[*ss],[]):
+                return While(expose_exp(exp),expose_stmts(ss),[])
             case _:
                 raise NotImplementedError('expose_stmt, unexpected', s)
     
     def expose_exp(self, e):
         expose_exp = self.expose_exp
         match e:
-            case IfExp(pred,conseq,alter):
-                return IfExp(pred,expose_exp(conseq),expose_exp(alter))
-            case BinOp(e1,op,e2):
-                return BinOp(expose_exp(e1),op,expose_exp(e2))
-            case UnaryOp(op,_e):
-                return UnaryOp(op,expose_exp(_e))
             case Tuple([*es],ctx=Load()):
                 if not hasattr(e,'has_type') or not isinstance(e.has_type,TupleType):
                     raise Exception("expose_exp, bad argument, typeless tuple: ", e)
@@ -96,10 +97,18 @@ class Compiler(Compiler_Lwhile):
                 init = make_assigns(init)
                 res = Begin(init + collect + alloc, tup_exp)
                 return res
+            case IfExp(pred,conseq,alter):
+                return IfExp(expose_exp(pred),expose_exp(conseq),expose_exp(alter))
+            case BinOp(e1,op,e2):
+                return BinOp(expose_exp(e1),op,expose_exp(e2))
+            case UnaryOp(op,_e):
+                return UnaryOp(op,expose_exp(_e))
+            case Compare(left,[op],[right]):
+                return Compare(expose_exp(left),[op],[expose_exp(right)])
             case Call(fn,[*es]):
                 return Call(fn,[expose_exp(e) for e in es])
-            case Subscript(tup_exp,Constant(idx),ctx):
-                return Subscript(expose_exp(tup_exp),Constant(idx),ctx)
+            case Subscript(tup_exp,Constant(idx),ctx=ctx):
+                return Subscript(expose_exp(tup_exp),Constant(idx),ctx=ctx)
             case Constant()|Name():
                 return e
             case _:
@@ -130,7 +139,7 @@ class Compiler(Compiler_Lwhile):
                 return e,[]
             case Begin(ss,_e):
                 _e,bs = rco_exp(_e,True)
-                ss = self.rco_stmts(ss)+ make_assigns(bs)
+                ss = self.rco_stmts(ss) + make_assigns(bs)
                 e = Begin(ss,_e)
                 bs = []
                 return atomize(e,bs) if need_atomic is True else (e,bs)
@@ -138,11 +147,12 @@ class Compiler(Compiler_Lwhile):
                 tup_exp,bs = rco_exp(tup_exp,True)
                 e = Subscript(tup_exp,Constant(idx),ctx=Load())
                 return atomize(e,bs) if need_atomic is True else (e,bs)
-            case Allocate(i,t):
-                e,bs = Allocate(i,t), []
+            case Allocate(sz,ty):
+                bs = []
                 return atomize(e,bs) if need_atomic is True else (e,bs)
             case Call(Name('len'),[e]):
-                e,bs = rco_exp(e)
+                e,bs = rco_exp(e,True)
+                e = Call(Name('len'),[e])
                 return atomize(e,bs) if need_atomic is True else (e,bs)
             case _:
                 return super().rco_exp(e, need_atomic)
@@ -168,49 +178,37 @@ class Compiler(Compiler_Lwhile):
     
     # select_instructions pass
     def select_instructions(self, p: CProgram) -> X86Program:
-        return super().select_instructions(p)
+        assert(hasattr(p,'var_types'))
+        res = super().select_instructions(p)
+        res.var_types = p.var_types
+        return res
     
     def attach_tag(self,size:int,ts:TupleType):
         if not (size <= 50):
             raise NotImplementedError("Length of tuple is limited to 50", size)
         '''
-        [0] = yet to be copied to the ToSpace
+        [0] = whether the tuple has yet to be copied to the ToSpace. If the bit has value 1, then this tuple has not yet been copied. If the bit has value 0, then the entire tag is a forwarding pointer.
         [1..6],[1:7] = length of tuple
         [7..56],[7:57] = pointer mask
         [57..60] = ???
         [61..63] = unused
         '''
-        sz = 3
-        sz = [int(s) for s in bin(sz)[2:]]
-        sz = [0 for _ in range(len(sz),7)] + sz
-        ptr_msk = [(1 if isinstance(t,TupleType) else 0) for t in ts.types] 
-        ptr_msk = ptr_msk + [0 for _ in range(len(ptr_msk),50)]
-        ptr_msk = ptr_msk + [0 for _ in range(57,64)]
-
-        tag = sz + ptr_msk
-        xs = ''.join([str(i) for i in tag])
-        tag = int(xs,2)
-        
-        return tag
+        size = '0'*(6 - size.bit_length()) + bin(size)[2:]
+        ptr_msk = ''.join(('1' if isinstance(t,TupleType) else '0') for t in reversed(ts.types))
+        tag = ptr_msk+size+'1'
+        return int(tag,2)
     
     def select_arg(self, e: expr) -> arg:
         match e:
-            case Global():
-                raise NotImplementedError()
             case GlobalValue(name):
-                return GlobalValue(name)
+                return Global(name)
             case _:
                 return super().select_arg(e)
     
     def select_stmt(self, s: stmt) -> List[instr]:
         match s:
-            case Assign([name],Subscript(tup_exp,Constant(i),ctx=Load())):
-                var = self.select_arg(name)
-                tup_exp = self.select_arg(tup_exp)
-                return [
-                    Instr('movq',[tup_exp,Reg('r11')]),
-                    Instr('movq',[Deref('r11',8*(i+1)),var])
-                ]
+            case Assign([Subscript()],Subscript()):
+                raise NotImplementedError()
             case Assign([Subscript(tup_exp,Constant(i),ctx=Store())],rhs):
                 rhs = self.select_arg(rhs)
                 tup_exp = self.select_arg(tup_exp)
@@ -218,22 +216,28 @@ class Compiler(Compiler_Lwhile):
                     Instr('movq',[tup_exp,Reg('r11')]),
                     Instr('movq',[rhs,Deref('r11',8*(i+1))])
                 ]
+            case Assign([name],Subscript(tup_exp,Constant(i),ctx=Load())):
+                var = self.select_arg(name)
+                tup_exp = self.select_arg(tup_exp)
+                return [
+                    Instr('movq',[tup_exp,Reg('r11')]),
+                    Instr('movq',[Deref('r11',8*(i+1)),var]),
+                ]
             case Assign([name],Allocate(sz,t)):
                 var = self.select_arg(name)
                 return [
-                    Instr('movq',[GlobalValue('free_ptr'),Reg('r11')]),
-                    Instr('addq',[Immediate(8*(sz+1)),GlobalValue('free_ptr')]),
+                    Instr('movq',[Global('free_ptr'),Reg('r11')]),
+                    Instr('addq',[Immediate(8*(sz+1)),Global('free_ptr')]),
                     Instr('movq',[Immediate(self.attach_tag(sz,t)), Deref('r11',0)]),
-                    Instr('movq',[Reg('r11'),var])
+                    Instr('movq',[Reg('r11'),var]),
                 ]
             case Expr(Call(Name('len'), [tup])):
-                var = self.select_arg(tup)
                 raise NotImplementedError()
             case Collect(sz):
                 return [
                     Instr('movq',[Reg('r15'),Reg('rdi')]),
                     Instr('movq',[Immediate(sz),Reg('rsi')]),
-                    Callq('collect',2)
+                    Callq('collect',2),
                 ]
             case Assign([name],Compare(left,[Is()],[right])):
                 var = self.select_arg(name)
@@ -249,29 +253,78 @@ class Compiler(Compiler_Lwhile):
     
     # assign_homes
     def assign_homes(self, p: CProgram) -> CProgram:
-        return super().assign_homes(p)
+        assert(hasattr(p,'var_types'))
+        self.var_types = p.var_types
+        self.spilled = set()
+        self.tuples = set()
+        res = super().assign_homes(p)
+        return res
+    
+    def get_var_type(self,name:str):
+        return self.var_types[name]
+    
+    def assign_homes_arg(self, a: arg, home: dict[Variable, arg]) -> arg:
+        # rbp for variable spilled
+        # r15 for root stack spilled
+        match a:
+            case Variable(id) if isinstance(self.get_var_type(id),TupleType):
+                self.tuples.add(id)
+                if a not in home:
+                    home[a] = Deref('r15',offset = -8*(len(self.tuples)+1))
+                return home[a]
+            case Variable(id):
+                self.spilled.add(id)
+                if a not in home:
+                    home[a] = Deref('rbp',offset = -8*(len(self.spilled)+1))
+                return home[a]
+            case Deref('r11',offset=offset):
+                return a
+            case Immediate()|Reg():
+                return a
+            case Global(name):
+                return Global(name)
+            case _:
+                raise NotImplementedError("assign_homes_arg, bad argument: ", a)
     
     # patch_instructions
     def patch_instructions(self, p: CProgram) -> CProgram:
         return super().patch_instructions(p)
     
+    def is_mem_ref(self,a: arg) -> bool:
+        return isinstance(a,Global) or super().is_mem_ref(a)
+    
     # prelude_and_conclusion
     def prelude_and_conclusion(self, p: CProgram) -> X86Program:
+        sz = len(self.spilled)*8
+        sz = sz if sz%16 == 0 else sz+8
+        root_stack_sz = len(self.tuples)*8
         prelude = [
             Instr('pushq',[Reg('rbp')]),
             Instr('movq',[Reg('rsp'),Reg('rbp')]),
-            Instr('subq',[Immediate(16),Reg('rsp')]),
-            Jump('start'),
+            Instr('subq',[Immediate(sz),Reg('rsp')]),
+        ]
+        prelude_init_gc = [
+            Instr('movq',[Immediate(65536),Reg("rdi")]),
+            Instr('movq',[Immediate(16),Reg("rsi")]),
+            # void initialize(uint64_t rootstack_size, uint64_t heap_size);
+            Callq("initialize",2),
+            Instr('movq',[Global('rootstack_begin'),Reg('r15')]),
+            Instr('movq',[Immediate(0),Deref('r15',0)]),
+            Instr('addq',[Immediate(root_stack_sz),Reg('r15')]),
+        ]
+        jmp = [Jump('start'),]
+        conclusion_gc = [
+            Instr('subq',[Immediate(root_stack_sz),Reg('r15')])
         ]
         conclusion = [
-            Instr('addq',[Immediate(16),Reg('rsp')]),
+            Instr('addq',[Immediate(sz),Reg('rsp')]),
             Instr('popq',[Reg('rbp')]),
             Instr('retq',[]),
         ]
         match p:
             case CProgram(body):
-                body[label_name('main')] = prelude
-                body[label_name('conclusion')] = conclusion
+                body[label_name('main')] = prelude + prelude_init_gc + jmp
+                body[label_name('conclusion')] = conclusion_gc + conclusion
                 return X86Program(body)
             case _:
                 raise NotImplementedError("prelude_and_conclusion unexpected",p)
