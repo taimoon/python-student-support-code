@@ -262,7 +262,7 @@ class Compiler(Compiler_Lwhile):
     # assign_homes
     def assign_homes(self, p: CProgram) -> CProgram:
         assert(hasattr(p,'var_types'))
-        self.var_types = p.var_types
+        self.var_types:dict[str] = p.var_types
         self.spilled = set()
         self.tuples = set()
         res = super().assign_homes(p)

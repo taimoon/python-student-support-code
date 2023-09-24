@@ -43,7 +43,7 @@ class Compiler(compiler.Compiler):
         # YOUR CODE HERE
         filter_immediate = self.filter_immediate
         match i:
-            case Instr('movq'|'subq'|'addq'|'xorq',[r,w]):
+            case Instr('movq'|'subq'|'addq'|'xorq'|'andq',[r,w]):
                 return filter_immediate({r})
             case Instr('negq'|'pushq'|'popq',[a]):
                 return filter_immediate({a})
@@ -58,7 +58,7 @@ class Compiler(compiler.Compiler):
     def write_vars(self, i: instr) -> Set[location]:
         filter_immediate = self.filter_immediate
         match i:
-            case Instr('movq'|'subq'|'addq'|'xorq',[r,w]):
+            case Instr('movq'|'subq'|'addq'|'xorq'|'andq',[r,w]):
                 return filter_immediate({w})
             case Instr('negq'|'pushq'|'popq',[a]):
                 return filter_immediate({a})
@@ -109,7 +109,7 @@ class Compiler(compiler.Compiler):
                 for v in live_after[i]:
                     if v!=s and v!=d:
                         adj.add_edge(d,v)
-            case Instr('subq'|'addq'|'xorq',[s,d]):
+            case Instr('subq'|'addq'|'xorq'|'andq',[s,d]):
                 adj.add_vertex(d)
                 if not isinstance(s,Immediate): adj.add_vertex(s)
                 for v in live_after[i]:
@@ -155,7 +155,7 @@ class Compiler(compiler.Compiler):
         '''
 
         reg2int = lambda v: self.reg2int.get(v,None)
-        colors = {v:reg2int(v) for v in graph.vertices()}
+        colors = {v:reg2int(v) for v in variables}
         saturation = lambda u : self.saturation(graph,colors,u)
         
         def less(u,v):
