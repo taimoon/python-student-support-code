@@ -161,14 +161,13 @@ class Compiler:
     ############################################################################
 
     def assign_homes_arg(self, a: arg, home: Dict[Variable, arg]) -> arg:
-        
         match a:
-            case Variable(id):
+            case Immediate()|Reg():
+                return a
+            case Variable():
                 if a not in home:
                     home[a] = Deref('rbp',offset = -8*(len(home)+1))
                 return home[a]
-            case a if isinstance(a,Immediate|Reg):
-                return a
             case _:
                 raise NotImplementedError('assign_homes_arg',a)
 
@@ -177,10 +176,10 @@ class Compiler:
         match i:
             case Instr(op,args):
                 return Instr(op,[self.assign_homes_arg(a,home) for a in args])
-            case i if isinstance(i,Callq):
+            case Callq():
                 return i
             case _:
-                raise NotImplementedError('assign_homes_instr',str(i))
+                raise NotImplementedError('assign_homes_instr ',str(i))
 
     def assign_homes_instrs(self, ss: List[instr],
                             home: Dict[Variable, arg]) -> List[instr]:

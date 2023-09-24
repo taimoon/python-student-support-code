@@ -85,19 +85,6 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             case _:
                 return super().write_vars(i)
     
-    def assign_homes(self, p: CProgram) -> CProgram:
-        live_after = self.uncover_live(p)
-        self.used_callee = set()
-        body:dict = p.body
-        
-        self.used_callee = set()
-        graph = self.build_interference(p.body,live_after)
-        for lbl,ss in body.items():
-            used_callee = set()
-            body[lbl] = self.allocate_registers(ss,graph,used_callee=used_callee)
-            self.used_callee = set.union(self.used_callee,used_callee)
-        return CProgram(body)
-    
     def build_interference(self, instrs: dict[str, list[instr]], live_after: Dict[str,Dict[instr, Set[location]]]) -> UndirectedAdjList:
         adj = UndirectedAdjList()
         for lbl,ss in instrs.items():
@@ -121,6 +108,19 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             case _:
                 return super().add_interference(i, live_after, adj)
     
+    def assign_homes(self, p: CProgram) -> CProgram:
+        live_after = self.uncover_live(p)
+        self.used_callee = set()
+        body:dict = p.body
+        
+        self.used_callee = set()
+        graph = self.build_interference(p.body,live_after)
+        for lbl,ss in body.items():
+            used_callee = set()
+            body[lbl] = self.allocate_registers(ss,graph,used_callee=used_callee)
+            self.used_callee = set.union(self.used_callee,used_callee)
+        return CProgram(body)
+    
     def allocate_registers(self, p: list[instr], graph: UndirectedAdjList, used_callee: Set[Reg]) -> list[instr]:
         return super().allocate_registers(X86Program(p), graph, used_callee).body
     
@@ -133,7 +133,6 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
     
     
     def prelude_and_conclusion(self, p: CProgram) -> X86Program:
-        super().prelude_and_conclusion
         align = lambda n : n+(16-n%16)
         C = len(self.used_callee)
         S = len(self.spilled)
