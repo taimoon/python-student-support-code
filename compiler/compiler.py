@@ -185,11 +185,15 @@ class Compiler:
                             home: Dict[Variable, arg]) -> List[instr]:
         return [self.assign_homes_instr(s,home) for s in ss]
 
-    def assign_homes(self, p: X86Program) -> X86Program:
+    def assign_homes_spilled(self, p: X86Program) -> tuple[X86Program,dict]:
         home = {}
         res = X86Program(self.assign_homes_instrs(p.body,home))
+        return res,home
+        
+    def assign_homes(self, p: X86Program) -> X86Program:
+        p,home = self.assign_homes_spilled(p)
         self.spilled = set(home.keys())
-        return res
+        return p
 
     ############################################################################
     # Patch Instructions

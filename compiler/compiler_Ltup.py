@@ -1,5 +1,4 @@
 from ast import *
-from ast import List, arg, expr, stmt
 from typing import List
 from x86_ast import *
 from compiler.compiler import Temporaries
@@ -11,8 +10,6 @@ from utils import (
     )
 from compiler.compiler_Lif import Blocks
 from compiler.compiler_Lwhile import Compiler as Compiler_Lwhile
-from x86_ast import X86Program
-
 '''
 Ltup extends Lwhile
 But Ltup is very limited such that
@@ -261,30 +258,43 @@ class Compiler(Compiler_Lwhile):
     
     # assign_homes
     def assign_homes(self, p: CProgram) -> CProgram:
+        p,home = self.assign_homes_spilled(p)
+        self.tuples = set(home['tuple'].keys())
+        self.spilled = set(home['var'].keys())
+        return p
+    
+    def init_home(self):
+        return {'tuple':{},'var':{}}
+    
+    def assign_homes_spilled(self, p: CProgram) -> tuple[CProgram,dict]:
         assert(hasattr(p,'var_types'))
         self.var_types:dict[str] = p.var_types
-        self.spilled = set()
-        self.tuples = set()
-        res = super().assign_homes(p)
-        return res
+        return super().assign_homes_spilled(p)
     
     def get_var_type(self,name:str):
-        return self.var_types[name]
+        from utils import IntType,FunctionType,VoidType
+        return {
+            'input_int':FunctionType(VoidType(),IntType()),
+            'len':FunctionType(TupleType([]),IntType()),
+            **self.var_types
+            }[name]
+    
     
     def assign_homes_arg(self, a: arg, home: dict[Variable, arg]) -> arg:
         # rbp for variable spilled
         # r15 for root stack spilled
+        # home = {'tuple':{},'var':{}}
         match a:
             case Variable(id) if isinstance(self.get_var_type(id),TupleType):
-                self.tuples.add(id)
-                if a not in home:
-                    home[a] = Deref('r15',offset = -8*(len(self.tuples)+1))
-                return home[a]
+                # self.tuples.add(id)
+                if a not in home['tuple']:
+                    home['tuple'][a] = Deref('r15',offset = -8*(len(home['tuple'])+1))
+                return home['tuple'][a]
             case Variable(id):
-                self.spilled.add(id)
-                if a not in home:
-                    home[a] = Deref('rbp',offset = -8*(len(self.spilled)+1))
-                return home[a]
+                # self.spilled.add(id)
+                if a not in home['var']:
+                    home['var'][a] = Deref('rbp',offset = -8*(len(home['var'])+1))
+                return home['var'][a]
             case Deref('r11',offset=offset):
                 return a
             case Immediate()|Reg():
@@ -331,8 +341,9 @@ class Compiler(Compiler_Lwhile):
         ]
         match p:
             case CProgram(body):
+                from compiler.compiler_Lif import X86ProgramIf
                 body[label_name('main')] = prelude + prelude_init_gc + jmp
                 body[label_name('conclusion')] = conclusion_gc + conclusion
-                return X86Program(body)
+                return X86ProgramIf(body)
             case _:
                 raise NotImplementedError("prelude_and_conclusion unexpected",p)

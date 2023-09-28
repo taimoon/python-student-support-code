@@ -13,7 +13,10 @@ import compiler.compiler as compiler
 class Compiler(compiler.Compiler):
     # expansion
     def shrink(self,p:Module) -> Module:
-        return Module([self.expand_stmt(s) for s in p.body])
+        return Module(self.expand_stmts(p.body))
+    
+    def expand_stmts(self,ss:list[stmt]) -> list[stmt]:
+        return [self.expand_stmt(s) for s in ss]
     
     def expand_stmt(self,s:stmt) -> stmt:
         expand_exp = self.expand_exp
@@ -263,16 +266,25 @@ class Compiler(compiler.Compiler):
                 return super().select_stmt(s)
     
     # assign homes
-    def assign_homes(self, p: CProgram) -> CProgram:
+    def assign_homes_spilled(self, p: CProgram) -> tuple[CProgram,dict]:
         match p:
             case CProgram(body):
-                home = {}
+                home = self.init_home()
                 for lbl,ss in body.items():
                     body[lbl] = self.assign_homes_instrs(ss,home)
-                self.spilled = set(home.keys())
-                return CProgram(body)
+                return CProgram(body),home
             case _:
-                return super().assign_homes(p)
+                raise NotImplementedError()
+    
+
+    def init_home(self):
+        return dict()
+    
+    
+    def assign_homes(self, p: CProgram) -> CProgram:
+        p,home = self.assign_homes_spilled(p)
+        self.spilled = set(home.keys())
+        return p
     
     
     def assign_homes_instr(self, i: instr,
@@ -328,7 +340,19 @@ class Compiler(compiler.Compiler):
             case CProgram(body):
                 body[label_name('main')] = prelude + jmp
                 body[label_name('conclusion')] = conclusion
-                return X86Program(body)
+                return X86ProgramIf(body)
             case _:
                 raise NotImplementedError("prelude_and_conclusion unexpected",p)
-        
+
+
+class X86ProgramIf(X86Program):
+    def __str__(self):
+        result = ''
+        for (l,ss) in self.body.items():
+            if l == label_name('main'):
+                result += '\t.globl ' + label_name('main') + '\n'
+            result += l + ':\n'
+            indent()
+            result += ''.join([str(s) for s in ss]) + '\n'
+            dedent()
+        return result
