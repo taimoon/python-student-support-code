@@ -150,7 +150,11 @@ class Compiler(Compiler_Ltup):
             case Expr(e):
                 return Expr(limit_exp(e))
             case Assign([Name(var)], e):
-                return Assign([Name(var)],limit_exp(e))
+                match home.get(var,Name(var)):
+                    case Subscript(Name(tup),Constant(i),Load()):
+                        return Assign([Subscript(Name(tup),Constant(i),Store())],limit_exp(e))
+                    case Name(var):
+                        return Assign([Name(var)],limit_exp(e))
             case _:
                 raise NotImplementedError('limit_stmt, unexpected argument ', s)
     

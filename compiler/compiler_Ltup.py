@@ -120,7 +120,7 @@ class Compiler(Compiler_Lwhile):
                 return [s]
             case Assign([Subscript(tup_exp,Constant(i),ctx=Store())],e):
                 tup_exp,xs = rco_exp(tup_exp,True)
-                e,bs = rco_exp(e,False)
+                e,bs = rco_exp(e,True)
                 bs = xs + bs
                 ss = make_assigns(bs) + [
                     Assign([Subscript(tup_exp,Constant(i),ctx=Store())],e)]
