@@ -8,37 +8,46 @@ sys.path.append('../python-student-support-code/interp_x86')
 from utils import run_tests, run_one_test, enable_tracing
 from interp_x86.eval_x86 import interp_x86
 
-from type_check_Ltup import TypeCheckLtup
-from type_check_Ctup import TypeCheckCtup
-type_check_Ctup = TypeCheckCtup().type_check
-type_check = TypeCheckLtup().type_check
+from type_check_Cfun import TypeCheckCfun as TypeCheckC
+from type_check_Lfun import TypeCheckLfun as TypeCheckL
+type_check_C = TypeCheckC().type_check
+type_checkL = TypeCheckL().type_check
 
 typecheck_dict = {
-    'source': type_check,
-    'shrink':type_check, # get the tuple_types
-    'expose_allocation':type_check,
-    'remove_complex_operands': type_check,
-    'explicate_control':type_check_Ctup, # get the var_types
+    'source': type_checkL,
+    'shrink':type_checkL, # get the tuple_types
+    'limit_functions':type_checkL,
+    'reveal_functions':type_checkL,
+    'expose_allocation':type_checkL,
+    'remove_complex_operands': type_checkL,
+    'explicate_control':type_check_C, # get the var_types
     # 'select_instructions': interp_x86, # early stop
     # 'assign_homes': interp_x86,
     # 'patch_instructions': interp_x86,
     # 'prelude_and_conclusion':interp_x86,
 }
 
-from interp_Ltup import InterpLtup
-from interp_Ctup import InterpCtup
-interpLtup = InterpLtup().interp
-interpCtup = InterpCtup().interp
+# from interp_Lif import InterpLif as InterpL
+# from interp_Cif import InterpCif as InterpC
+
+from interp_Lfun import InterpLfun as InterpL
+from interp_Cfun import InterpCfun as InterpC
+
+interpL = InterpL().interp
+interpC = InterpC().interp
 
 interp_dict = {
-    'shrink':interpLtup,
-    'expose_allocation':interpLtup,
-    'remove_complex_operands': interpLtup,
-    'explicate_control':interpCtup,
+    # 'source':interpL,
+    # 'shrink':interpL,
+    # 'limit_functions':interpL,
+    # 'reveal_functions':interpL,
+    # 'expose_allocation':interpL,
+    # 'remove_complex_operands': interpL,
+    # 'explicate_control':interpC,
     # 'select_instructions': interp_x86, # early stop
     # 'assign_homes': interp_x86,
     # 'patch_instructions': interp_x86,
-    'prelude_and_conclusion':interp_x86,
+    # 'prelude_and_conclusion':interp_x86,
 }
 
 def test_iftype_error():
@@ -54,7 +63,8 @@ def test_iftype_error():
 # from compiler.compiler_Lif import Compiler
 # from compiler.compiler_regalloc_Lwhile import Compiler
 # from compiler.compiler_Ltup import Compiler
-from compiler.compiler_regalloc_Ltup import Compiler
+# from compiler.compiler_regalloc_Ltup import Compiler
+from compiler.compiler_Lfun import Compiler
 
 compiler = Compiler()
 
@@ -69,16 +79,17 @@ if __name__ == '__main__':
         enable_tracing()
     
     if args.run_once is True:
-        path = os.getcwd() + '/tests/tuple/eg.py'
+        path = os.getcwd() + '/tests/fun/primesum.py'
+        
         run_one_test(path,
-                    'if',
+                    'fun',
                     compiler,
-                    'if',
+                    'fun',
                     typecheck_dict,
                     interp_dict)
     else:
         sys.setrecursionlimit(5000)
-        name = 'tuple'
+        name = 'fun'
         run_tests(name, compiler, name,
                 typecheck_dict,
                 interp_dict)

@@ -8,32 +8,40 @@ sys.path.append('../python-student-support-code/interp_x86')
 from utils import (run_tests, run_one_test, enable_tracing)
 from interp_x86.eval_x86 import interp_x86
 
-from type_check_Ltup import TypeCheckLtup
-from type_check_Ctup import TypeCheckCtup
-type_check_Ctup = TypeCheckCtup().type_check
-type_check = TypeCheckLtup().type_check
+# from type_check_Ltup import TypeCheckLtup as TypeCheckL
+# from type_check_Ctup import TypeCheckCtup as TypeCheckC
+from type_check_Lfun import TypeCheckLfun as TypeCheckL
+from type_check_Cfun import TypeCheckCfun as TypeCheckC
+type_checkC = TypeCheckC().type_check
+type_checkL = TypeCheckL().type_check
 
 typecheck_dict = {
-    'source': type_check,
-    'shrink':type_check, # get the tuple_types
-    'expose_allocation':type_check,
-    'remove_complex_operands': type_check,
-    'explicate_control':type_check_Ctup, # get the var_types
+    'source': type_checkL,
+    'shrink':type_checkL, # get the tuple_types
+    'limit_functions':type_checkL,
+    'reveal_functions':type_checkL,
+    'expose_allocation':type_checkL,
+    'remove_complex_operands': type_checkL,
+    'explicate_control':type_checkC, # get the var_types
 }
-from interp_Ctup import InterpCtup,InterpCif
-from interp_Ltup import InterpLtup,InterpLwhile
-interpL = InterpLtup().interp
-interpC = InterpCtup().interp
+# from interp_Ctup import InterpCtup as InterpC
+# from interp_Ltup import InterpLtup as InterpL
+
+from interp_Cfun import InterpCfun as InterpC
+from interp_Lfun import InterpLfun as InterpL
+
+interpL = InterpL().interp
+interpC = InterpC().interp
 
 interp_dict = {
-    'shrink':interpL,
-    'expose_allocation':interpL,
-    'remove_complex_operands': interpL,
-    'explicate_control':interpC,
+    # 'shrink':interpL,
+    # 'expose_allocation':interpL,
+    # 'remove_complex_operands': interpL,
+    # 'explicate_control':interpC, # get var_types
     # 'select_instructions': interp_x86,
     # 'assign_homes': interp_x86,
     # 'patch_instructions': interp_x86,
-    'prelude_and_conclusion':interp_x86,
+    # 'prelude_and_conclusion':interp_x86,
 }
 
 
@@ -93,11 +101,20 @@ def test_Ltup():
     names = ['var','if','while','tuple']
     run_all_tests(names,compiler)
 
+def test_Lfun():
+    from compiler.compiler_Lfun import Compiler
+    compiler = Compiler()
+    print('compiler_Lfun')
+    names = ['var','if','while','tuple','fun']
+    run_all_tests(names,compiler)
+    
+
 if __name__ == '__main__':
-    test_Lvar()
-    test_Lvar_regalloc()
-    test_Lif()
-    test_Lif_regalloc()
-    test_Lwhile()
-    test_Lwhile_regalloc()
-    test_Ltup()
+    # test_Lvar()
+    # test_Lvar_regalloc()
+    # test_Lif()
+    # test_Lif_regalloc()
+    # test_Lwhile()
+    # test_Lwhile_regalloc()
+    # test_Ltup()
+    test_Lfun()
