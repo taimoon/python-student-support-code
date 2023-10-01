@@ -486,10 +486,12 @@ class Compiler(Compiler_Ltup):
                     Callq("initialize",2), # void initialize(uint64_t rootstack_size, uint64_t heap_size)
                     Instr('movq',[Global('rootstack_begin'),Reg('r15')]),
                     *[Instr('movq',[Immediate(0),Deref('r15',i*8)]) 
-                      for i,*_ in enumerate(defn.tuples)],
+                      for i,*_ in enumerate(defn.tuples)]
                 ] if var == 'main' else []
                 prelude_init_gc += [
                     Instr('addq',[Immediate(root_stack_sz),Reg('r15')]),
+                    *[Instr('movq',[Immediate(0),Deref('r15',i*8)]) 
+                      for i,*_ in enumerate(defn.tuples)]
                 ]
                 jmp = [Jump(label_name(var)+'_start'),]
                 
@@ -506,6 +508,7 @@ class Compiler(Compiler_Ltup):
                     match i:
                         case TailJump(f,arity):
                             return [
+                                Instr('subq',[Immediate(root_stack_sz),Reg('r15')]),
                                 Instr('addq',[Immediate(sz),Reg('rsp')]),
                                 Instr('popq',[Reg('rbp')]),
                                 IndirectJump(f),
