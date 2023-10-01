@@ -8,45 +8,47 @@ Temporaries = List[Binding]
 
 
 class Compiler:
-
     ############################################################################
     # Remove Complex Operands
     ############################################################################
-    def atomize(self,e,bs):
-        tmp = Name(generate_name('tmp'))
-        bs += [(tmp,e)]
-        e = tmp
-        return e,bs
-
-    def rco_exp(self, e: expr, need_atomic: bool) -> Tuple[expr, Temporaries]:
+    def atomize(self, e: expr, bs: tuple[expr, Temporaries], need_atomic: bool) -> tuple[expr, Temporaries]:
+        if need_atomic is True:
+            tmp = Name(generate_name('tmp'))
+            bs += [(tmp,e)]
+            e = tmp
+            return e,bs
+        else:
+            return e,bs
+        
+    def rco_exp(self, e: expr, need_atomic: bool) -> tuple[expr, Temporaries]:
         atomize = self.atomize
+        rco_exp = self.rco_exp
         match e:
             case BinOp(left,op,right):
-                l,l_bs = self.rco_exp(left, True)
-                r,r_bs = self.rco_exp(right, True)
+                l,l_bs = rco_exp(left, True)
+                r,r_bs = rco_exp(right, True)
                 e = BinOp(l,op,r)
                 bs = l_bs + r_bs
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case UnaryOp(op, v):
-                e,bs = self.rco_exp(v, True)
+                e,bs = rco_exp(v, True)
                 e = UnaryOp(op, e)
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case Call(Name('input_int'), []):
-                bs = []
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,[],need_atomic)
             case Constant()|Name():
                 return e,[]
             case _:
                 raise Exception('rco_exp, unexpected',e)
 
-    def rco_stmt(self, s: stmt) -> List[stmt]:
+    def rco_stmt(self, s: stmt) -> list[stmt]:
         match s:
-            case Expr(Call(Name('print'), [arg])):
-                exp,bindings = self.rco_exp(arg,True)
+            case Expr(Call(Name('print'), [exp])):
+                exp,bindings = self.rco_exp(exp,True)
                 ss = make_assigns(bindings) + [Expr(Call(Name('print'),[exp]))]
                 return ss
             case Expr(e):
-                exp,bindings = self.rco_exp(e,False)
+                exp,bindings = self.rco_exp(e,True)
                 ss = make_assigns(bindings) + [Expr(exp)]
                 return ss
             case Assign([Name(var)],e):
@@ -54,7 +56,7 @@ class Compiler:
                 ss = make_assigns(bindings) + [Assign([Name(var)],exp)]
                 return ss
             case _:
-                raise Exception('rco_stmt not implemented',s)
+                raise Exception('rco_stmt, not implemented',s)
     
     def rco_stmts(self, ss:list[stmt]) -> list[stmt]:
         from functools import reduce
@@ -83,15 +85,16 @@ class Compiler:
                 raise Exception('select_arg not implement',e)
 
     def select_stmt(self, s: stmt) -> List[instr]:
+        select_arg = self.select_arg
         match s:
             case Expr(Call(Name('print'), [arg])):
-                arg = self.select_arg(arg)
+                arg = select_arg(arg)
                 return [
                     Instr('movq',[arg,Reg('rdi')]),
                     Callq(label_name('print_int'),1),
                 ]
             case Assign([name],Call(Name('input_int'), [])):
-                var = self.select_arg(name)
+                var = select_arg(name)
                 return [
                     Callq(label_name('read_int'),0),
                     Instr('movq',[Reg('rax'),var]),

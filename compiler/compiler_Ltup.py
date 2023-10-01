@@ -6,7 +6,7 @@ from utils import (
     CProgram, stmt, TupleType,  
     make_assigns, make_begin, generate_name, 
     Begin, Collect, Allocate,
-    GlobalValue,
+    GlobalValue,Goto
     )
 from compiler.compiler_Lif import Blocks
 from compiler.compiler_Lwhile import Compiler as Compiler_Lwhile
@@ -18,7 +18,10 @@ exp ::= exp,…,exp | exp[int] | len(exp)
 LTup ::= stmt*
 where constant index is allowed
 
-root stack pointer (r15)
+rax - reg for holding temp
+r15 - root stack pointer
+r11 - another reg for tuple manipulation
+
 '''
 
 class Compiler(Compiler_Lwhile):
@@ -139,18 +142,18 @@ class Compiler(Compiler_Lwhile):
                 ss = self.rco_stmts(ss) + make_assigns(bs)
                 e = Begin(ss,_e)
                 bs = []
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case Subscript(tup_exp,Constant(idx),ctx=Load()):
                 tup_exp,bs = rco_exp(tup_exp,True)
                 e = Subscript(tup_exp,Constant(idx),ctx=Load())
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case Allocate(sz,ty):
                 bs = []
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case Call(Name('len'),[e]):
                 e,bs = rco_exp(e,True)
                 e = Call(Name('len'),[e])
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case _:
                 return super().rco_exp(e, need_atomic)
     
@@ -203,25 +206,26 @@ class Compiler(Compiler_Lwhile):
                 return super().select_arg(e)
     
     def select_stmt(self, s: stmt) -> List[instr]:
+        select_arg = self.select_arg
         match s:
             case Assign([Subscript()],Subscript()):
                 raise NotImplementedError()
             case Assign([Subscript(tup_exp,Constant(i),ctx=Store())],rhs):
-                rhs = self.select_arg(rhs)
-                tup_exp = self.select_arg(tup_exp)
+                rhs = select_arg(rhs)
+                tup_exp = select_arg(tup_exp)
                 return [
                     Instr('movq',[tup_exp,Reg('r11')]),
                     Instr('movq',[rhs,Deref('r11',8*(i+1))])
                 ]
             case Assign([name],Subscript(tup_exp,Constant(i),ctx=Load())):
-                var = self.select_arg(name)
-                tup_exp = self.select_arg(tup_exp)
+                var = select_arg(name)
+                tup_exp = select_arg(tup_exp)
                 return [
                     Instr('movq',[tup_exp,Reg('r11')]),
                     Instr('movq',[Deref('r11',8*(i+1)),var]),
                 ]
             case Assign([name],Allocate(sz,t)):
-                var = self.select_arg(name)
+                var = select_arg(name)
                 return [
                     Instr('movq',[Global('free_ptr'),Reg('r11')]),
                     Instr('addq',[Immediate(8*(sz+1)),Global('free_ptr')]),
@@ -230,8 +234,8 @@ class Compiler(Compiler_Lwhile):
                 ]
             case Assign([name],Call(Name('len'), [tup_exp])):
                 # (2**6-1) & (*tup >> 1) 
-                var = self.select_arg(name)
-                tup_exp = self.select_arg(tup_exp)
+                var = select_arg(name)
+                tup_exp = select_arg(tup_exp)
                 return [
                     Instr('movq',[tup_exp,Reg('r11')]),
                     Instr('movq',[Deref('r11',0),var]),
@@ -244,10 +248,18 @@ class Compiler(Compiler_Lwhile):
                     Instr('movq',[Immediate(sz),Reg('rsi')]),
                     Callq('collect',2),
                 ]
+            case If(Compare(left,[Is()],[right]),[Goto(conseq)],[Goto(alter)]):
+                left = select_arg(left)
+                right = select_arg(right)
+                return [
+                    Instr('cmpq',[right,left]),
+                    JumpIf('e',conseq),
+                    Jump(alter),
+                ]
             case Assign([name],Compare(left,[Is()],[right])):
-                var = self.select_arg(name)
-                left = self.select_arg(left)
-                right = self.select_arg(right)
+                var = select_arg(name)
+                left = select_arg(left)
+                right = select_arg(right)
                 return [
                     Instr('cmpq',[right,left]),
                     Instr('sete',[ByteReg('al')]),
@@ -255,7 +267,6 @@ class Compiler(Compiler_Lwhile):
                 ]
             case _:
                 return super().select_stmt(s)
-    
     # assign_homes
     def assign_homes(self, p: CProgram) -> CProgram:
         p,home = self.assign_homes_spilled(p)
@@ -327,7 +338,8 @@ class Compiler(Compiler_Lwhile):
             # void initialize(uint64_t rootstack_size, uint64_t heap_size);
             Callq("initialize",2),
             Instr('movq',[Global('rootstack_begin'),Reg('r15')]),
-            Instr('movq',[Immediate(0),Deref('r15',0)]),
+            *[Instr('movq',[Immediate(0),Deref('r15',i*8)]) 
+              for i,*_ in enumerate(self.tuples)],
             Instr('addq',[Immediate(root_stack_sz),Reg('r15')]),
         ]
         jmp = [Jump('start'),]

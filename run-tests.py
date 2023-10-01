@@ -27,9 +27,6 @@ typecheck_dict = {
     # 'prelude_and_conclusion':interp_x86,
 }
 
-# from interp_Lif import InterpLif as InterpL
-# from interp_Cif import InterpCif as InterpC
-
 from interp_Lfun import InterpLfun as InterpL
 from interp_Cfun import InterpCfun as InterpC
 

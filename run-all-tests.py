@@ -8,44 +8,46 @@ sys.path.append('../python-student-support-code/interp_x86')
 from utils import (run_tests, run_one_test, enable_tracing)
 from interp_x86.eval_x86 import interp_x86
 
-# from type_check_Ltup import TypeCheckLtup as TypeCheckL
-# from type_check_Ctup import TypeCheckCtup as TypeCheckC
 from type_check_Lfun import TypeCheckLfun as TypeCheckL
 from type_check_Cfun import TypeCheckCfun as TypeCheckC
 type_checkC = TypeCheckC().type_check
 type_checkL = TypeCheckL().type_check
 
-typecheck_dict = {
-    'source': type_checkL,
-    'shrink':type_checkL, # get the tuple_types
-    'limit_functions':type_checkL,
-    'reveal_functions':type_checkL,
-    'expose_allocation':type_checkL,
-    'remove_complex_operands': type_checkL,
-    'explicate_control':type_checkC, # get the var_types
-}
-# from interp_Ctup import InterpCtup as InterpC
-# from interp_Ltup import InterpLtup as InterpL
+def init_typecheck_dict(type_checkL=type_checkL,type_checkC=type_checkC):
+    typecheck_dict = {
+        'source': type_checkL,
+        'shrink':type_checkL, # get the tuple_types
+        'limit_functions':type_checkL,
+        'reveal_functions':type_checkL,
+        'expose_allocation':type_checkL,
+        'remove_complex_operands': type_checkL,
+        'explicate_control':type_checkC, # get the var_types
+    }
+    return typecheck_dict
 
-from interp_Cfun import InterpCfun as InterpC
-from interp_Lfun import InterpLfun as InterpL
+def init_interp_dict():
+    from interp_Cfun import InterpCfun as InterpC
+    from interp_Lfun import InterpLfun as InterpL
 
-interpL = InterpL().interp
-interpC = InterpC().interp
+    interpL = InterpL().interp
+    interpC = InterpC().interp
 
-interp_dict = {
-    # 'shrink':interpL,
-    # 'expose_allocation':interpL,
-    # 'remove_complex_operands': interpL,
-    # 'explicate_control':interpC, # get var_types
-    # 'select_instructions': interp_x86,
-    # 'assign_homes': interp_x86,
-    # 'patch_instructions': interp_x86,
-    # 'prelude_and_conclusion':interp_x86,
-}
+    interp_dict = {
+        # 'shrink':interpL,
+        # 'expose_allocation':interpL,
+        # 'remove_complex_operands': interpL,
+        # 'explicate_control':interpC, # get var_types
+        # 'select_instructions': interp_x86,
+        # 'assign_homes': interp_x86,
+        # 'patch_instructions': interp_x86,
+        # 'prelude_and_conclusion':interp_x86,
+    }
+    return interp_dict
 
-
-def run_all_tests(names,compiler):
+def run_all_tests(names,compiler
+    ,typecheck_dict=init_typecheck_dict()
+    ,interp_dict=init_interp_dict()
+    ):
     for name in names:
         run_tests(name, compiler, name,
                 typecheck_dict,
@@ -71,35 +73,45 @@ def test_Lif():
     compiler = Compiler()
     print('compiler_Lif')
     names = ['var','if']
-    run_all_tests(names,compiler)
+    from type_check_Ctup import TypeCheckCtup as TypeCheckC
+    typecheck_dict = init_typecheck_dict(type_checkC=TypeCheckC().type_check)
+    run_all_tests(names,compiler,typecheck_dict)
 
 def test_Lif_regalloc():
     from compiler.compiler_regalloc_Lif import Compiler
     compiler = Compiler()
     print('compiler_regalloc_Lif')
     names = ['var','if']
-    run_all_tests(names,compiler)
+    from type_check_Ctup import TypeCheckCtup as TypeCheckC
+    typecheck_dict = init_typecheck_dict(type_checkC=TypeCheckC().type_check)
+    run_all_tests(names,compiler,typecheck_dict)
 
 def test_Lwhile():
     from compiler.compiler_Lwhile import Compiler
     compiler = Compiler()
     print('compiler_Lwhile')
     names = ['var','if','while']
-    run_all_tests(names,compiler)
+    from type_check_Ctup import TypeCheckCtup as TypeCheckC
+    typecheck_dict = init_typecheck_dict(type_checkC=TypeCheckC().type_check)
+    run_all_tests(names,compiler,typecheck_dict)
 
 def test_Lwhile_regalloc():
     from compiler.compiler_regalloc_Lwhile import Compiler
     compiler = Compiler()
     print('compiler_regalloc_Lwhile')
     names = ['var','if','while']
-    run_all_tests(names,compiler)
-
+    from type_check_Ctup import TypeCheckCtup as TypeCheckC
+    typecheck_dict = init_typecheck_dict(type_checkC=TypeCheckC().type_check)
+    run_all_tests(names,compiler,typecheck_dict)
+    
 def test_Ltup():
     from compiler.compiler_Ltup import Compiler
     compiler = Compiler()
     print('compiler_Ltup')
     names = ['var','if','while','tuple']
-    run_all_tests(names,compiler)
+    from type_check_Ctup import TypeCheckCtup as TypeCheckC
+    typecheck_dict = init_typecheck_dict(type_checkC=TypeCheckC().type_check)
+    run_all_tests(names,compiler,typecheck_dict)
 
 def test_Lfun():
     from compiler.compiler_Lfun import Compiler
@@ -110,11 +122,11 @@ def test_Lfun():
     
 
 if __name__ == '__main__':
-    # test_Lvar()
-    # test_Lvar_regalloc()
-    # test_Lif()
-    # test_Lif_regalloc()
-    # test_Lwhile()
-    # test_Lwhile_regalloc()
-    # test_Ltup()
+    test_Lvar()
+    test_Lvar_regalloc()
+    test_Lif()
+    test_Lif_regalloc()
+    test_Lwhile()
+    test_Lwhile_regalloc()
+    test_Ltup()
     test_Lfun()

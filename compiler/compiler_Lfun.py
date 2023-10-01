@@ -17,7 +17,7 @@ from x86_ast import *
 from utils import (
     FunRef,IntType,TailCall,
     CProgram, stmt, CProgramDefs,
-    make_assigns, Begin, TupleType
+    make_assigns, Begin, TupleType,make_begin
     )
 from compiler.compiler_Lif import Blocks
 from compiler.compiler_Ltup import Compiler as Compiler_Ltup
@@ -229,10 +229,10 @@ class Compiler(Compiler_Ltup):
                     es += [_e]
                     bs += _bs
                 e = Call(f_exp,es)
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case FunRef(f,arity):
                 e,bs = FunRef(f,arity),[]
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case _:
                 return super().rco_exp(e, need_atomic)
     
@@ -301,8 +301,12 @@ class Compiler(Compiler_Ltup):
         goto_thn = lambda: create_block(thn, basic_blocks)
         goto_els = lambda: create_block(els, basic_blocks)
         match cnd:
-            case Call(FunRef(f,arg_n), [*args]):
-                raise NotImplementedError()
+            case Call(Name(id),[*atm]):
+                cnd,bs = self.rco_exp(cnd,True)
+                return self.explicate_pred(make_begin(bs,cnd),thn,els,basic_blocks)
+            case Call(FunRef(f,arg_n), [*atm]):
+                cnd,bs = self.rco_exp(cnd,True)
+                return self.explicate_pred(make_begin(bs,cnd),thn,els,basic_blocks)
             case _:
                 return super().explicate_pred(cnd, thn, els, basic_blocks)
     
@@ -324,7 +328,7 @@ class Compiler(Compiler_Ltup):
                 pass_arg_instrs = [Instr('movq',[r,Variable(p)]) 
                                    for r,(p,t) in zip(self.arg_pass_ord,params)]
                 
-                pass_arg_instrs = [ASM_COMMENT(f'{var}: moving arg for reg alloc')] + pass_arg_instrs + [ASM_COMMENT(f'{var}: end of reg alloc moving')]
+                # pass_arg_instrs = [ASM_COMMENT(f'{var}: moving arg for reg alloc')] + pass_arg_instrs + [ASM_COMMENT(f'{var}: end of reg alloc moving')]
                 
                 blocks[var+'_start'] =  pass_arg_instrs + blocks[var+'_start']
                 res = FunctionDef(var,[],blocks,None,IntType(),None)
@@ -481,7 +485,8 @@ class Compiler(Compiler_Ltup):
                     Instr('movq',[Immediate(2**16),Reg("rsi")]),
                     Callq("initialize",2), # void initialize(uint64_t rootstack_size, uint64_t heap_size)
                     Instr('movq',[Global('rootstack_begin'),Reg('r15')]),
-                    # Instr('movq',[Immediate(0),Deref('r15',0)]),
+                    *[Instr('movq',[Immediate(0),Deref('r15',i*8)]) 
+                      for i,*_ in enumerate(defn.tuples)],
                 ] if var == 'main' else []
                 prelude_init_gc += [
                     Instr('addq',[Immediate(root_stack_sz),Reg('r15')]),

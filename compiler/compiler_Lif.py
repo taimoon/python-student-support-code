@@ -70,11 +70,16 @@ class Compiler(compiler.Compiler):
         return super().remove_complex_operands(p)
     
     def rco_exp(self, e: expr, need_atomic: bool) -> Tuple[expr, Temporaries]:
-        rco_exp = self.rco_exp
         atomize = self.atomize
+        rco_exp = self.rco_exp
         match e:
+            case UnaryOp(Not(),exp):
+                e,bs = rco_exp(exp,False)
+                e = UnaryOp(Not(),e)
+                return atomize(e,bs,need_atomic)
             case IfExp(test,body,orelse):
-                test,t_bs = rco_exp(test,True)
+                # TODO: implement optimization for predicate
+                test,t_bs = rco_exp(test,False)
                 
                 body,bs = rco_exp(body,False)
                 body = make_begin(bs,body)
@@ -83,23 +88,24 @@ class Compiler(compiler.Compiler):
                 orelse = make_begin(bs,orelse)
                 
                 e,bs = IfExp(test,body,orelse),t_bs
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case Compare(left,[cmp],[right]):
                 l,l_bs = self.rco_exp(left, True)
                 r,r_bs = self.rco_exp(right, True)
                 e = Compare(l,[cmp],[r])
                 bs = l_bs + r_bs
-                return atomize(e,bs) if need_atomic is True else (e,bs)
+                return atomize(e,bs,need_atomic)
             case _:
                 return super().rco_exp(e, need_atomic)
     
     def rco_stmt(self, s: stmt) -> List[stmt]:
+        rco_stmts = self.rco_stmts
         match s:
             case If(test,body,orelse):
-                test,t_bs = self.rco_exp(test,True)
-                body = self.rco_stmts(body)
-                orelse = self.rco_stmts(orelse)
-                
+                # TODO: implement optimization for predicate
+                test,t_bs = self.rco_exp(test,False)
+                body = rco_stmts(body)
+                orelse = rco_stmts(orelse)
                 return make_assigns(t_bs) + [If(test,body,orelse)]
             case _:
                 return super().rco_stmt(s)
@@ -138,7 +144,7 @@ class Compiler(compiler.Compiler):
                 raise NotImplementedError()
             case Begin(body, result):
                 raise NotImplementedError()
-            case BinOp()|Compare()|Constant():
+            case BinOp()|Compare()|Constant()|UnaryOp():
                 return cont
             case Call(Name('print'|'input_int'),_):
                 return self.create_block([Expr(e)] + cont,basic_blocks)
@@ -159,12 +165,17 @@ class Compiler(compiler.Compiler):
                 for s in reversed(body):
                     cont = self.explicate_stmt(s,cont,basic_blocks)
                 return cont
+            case UnaryOp(Not(),e):
+                e,bs = self.rco_exp(e,True)
+                rhs = UnaryOp(Not(),e)
+                return make_assigns(bs) + [Assign([lhs], rhs)] + cont
             case _:
                 return [Assign([lhs], rhs)] + cont
     
-    def explicate_pred(self, cnd, thn: List[stmt], els: List[stmt], basic_blocks: Blocks) \
-        -> List[stmt]:
+    def explicate_pred(self, cnd, thn: list[stmt], els: list[stmt], basic_blocks: Blocks) \
+        -> list[stmt]:
         create_block = self.create_block
+        explicate_pred = self.explicate_pred
         goto_thn = lambda: create_block(thn, basic_blocks)
         goto_els = lambda: create_block(els, basic_blocks)
         match cnd:
@@ -174,10 +185,12 @@ class Compiler(compiler.Compiler):
                 return thn
             case Constant(False):
                 return els
-            case UnaryOp(Not(), operand):
-                return [If(operand, goto_els(), goto_thn())]
+            case UnaryOp(Not(), exp):
+                return explicate_pred(exp,els,thn,basic_blocks)
             case IfExp(test, body, orelse):
-                raise NotImplementedError()
+                body = explicate_pred(body,thn,els,basic_blocks)
+                orelse = explicate_pred(orelse,thn,els,basic_blocks)
+                return explicate_pred(test,body,orelse,basic_blocks)
             case Begin(body, result):
                 cont = self.explicate_pred(result,thn,els,basic_blocks)
                 for s in reversed(body):
@@ -200,7 +213,7 @@ class Compiler(compiler.Compiler):
                 orelse = self.explicate_stmts(orelse,cont,basic_blocks)
                 return self.explicate_pred(test,body,orelse,basic_blocks)
             case _:
-                raise NotImplementedError('explicate_stmt',s)
+                raise NotImplementedError('explicate_stmt ',s)
     
     # select instruction
     def select_instructions(self, p: CProgram) -> X86Program:
