@@ -5,7 +5,7 @@ def mul_iter(x:int,y:int,r:int) -> int:
     return r if y == 0 else mul_iter(x,y-1,r+x)
 
 def remainder(x:int,d:int) -> int:
-    return remainder(x+(-d),d) if x+(-d) >= 0 else x
+    return remainder(x-d,d) if x-d >= 0 else x
 
 def smallest_divisor_iter(x:int,d:int) -> int:
     if remainder(x,d) == 0:
