@@ -31,6 +31,7 @@ class ASM_COMMENT:
 
 class Compiler(Compiler_Ltup):
     arg_pass_ord = Compiler_Regalloc.arg_pass_ord
+    
     ### shrink
     def shrink(self, p: Module) -> Module:
         res = super().shrink(p)
@@ -211,7 +212,7 @@ class Compiler(Compiler_Ltup):
             case FunctionDef(var, params, ss, None, type, None):
                 return [FunctionDef(var, params, self.rco_stmts(ss), None, type, None)]
             case Return(e):
-                e,bs = self.rco_exp(e,True)
+                e,bs = self.rco_exp(e,False)
                 return make_assigns(bs) + [Return(e)]
             case _:
                 return super().rco_stmt(s)
@@ -266,25 +267,25 @@ class Compiler(Compiler_Ltup):
         match e:
             case (Constant()
                   |Name()|Subscript()
-                  |UnaryOp()|BinOp()):
+                  |UnaryOp()|BinOp()|Compare()):
                 return [Return(e)]
             case Call(Name('input_int'),[]):
-                e = TailCall(Name('input_int'),[])
                 return [Return(e)]
             case Begin(ss,exp):
-                return [ss] + explicate_tail(exp,basic_blocks)
+                tail = explicate_tail(exp,basic_blocks)
+                return self.explicate_stmts(ss,tail,basic_blocks)
             case IfExp(pred,conseq,alter):
-                conseq = explicate_tail(conseq)
-                alter = explicate_tail(alter)
-                return self.explicate_pred(pred,conseq,alter)
+                conseq = explicate_tail(conseq,basic_blocks)
+                alter = explicate_tail(alter,basic_blocks)
+                return self.explicate_pred(pred,conseq,alter,basic_blocks)
             case Call(Name('len'),[atm]):
-                e = TailCall(Name('len'),[atm])
                 return [Return(e)]
             case Call(FunRef(f,argc),[*atm]):
-                e = TailCall(FunRef(f,argc),[*atm])
-                return [Return(e)]
+                return [TailCall(FunRef(f,argc),[*atm])]
+            case Call(Name(id),[*atm]):
+                return [TailCall(Name(id),[*atm])]
             case FunRef(f,argc):
-                raise NotImplementedError()
+                return [Return(FunRef(f,argc))]
             case _:
                 raise NotImplementedError('explicate_tail, bad argument ', e)
     
@@ -350,24 +351,38 @@ class Compiler(Compiler_Ltup):
                 ):
                 return super().select_stmt(s)
             case Assign([name],Call(_f,[*atms])):
-                
-                return [ASM_COMMENT('Preparing to call the function'),]+[
+                return  [*[
                     Instr('movq',[select_arg(atm),reg])
-                    for atm,reg in zip(atms,self.arg_pass_ord)
-                    ] + [
+                    for atm,reg in zip(atms,self.arg_pass_ord)],
                     IndirectCallq(select_arg(_f),len(atms)),
                     Instr('movq',[Reg('rax'),select_arg(name)]),
-                    ASM_COMMENT('end of calling the function'),
+                    ]
+            case TailCall(f,[*atms]):
+                return [*[Instr('movq',[select_arg(atm),reg])
+                          for atm,reg in zip(atms,self.arg_pass_ord)],
+                        TailJump(select_arg(f),len(atms)),
+                        ]
+            case Return(value=FunRef()|Constant()
+                        |Name()|Subscript()
+                        |UnaryOp()|BinOp()|Compare()):
+                return self.select_stmt(
+                    Assign([Reg('rax')],s.value),f) + [
+                    Jump(label_name(f + '_conclusion')),
                 ]
-            case Return(TailCall()):
-                raise NotImplementedError('TODO')
             case Return(e):
                 return [
                     Instr('movq',[select_arg(e),Reg('rax')]),
-                    Jump(label_name(f + '_conclusion')),   
+                    Jump(label_name(f + '_conclusion')),
                 ]
             case _:
                 return super().select_stmt(s)
+    
+    def select_arg(self, e:expr):
+        match e:
+            case Reg():
+                return e
+            case _:
+                return super().select_arg(e)
     
     ### assign_homes
     def assign_homes(self, p :X86ProgramDefs):
@@ -392,9 +407,12 @@ class Compiler(Compiler_Ltup):
                 raise NotImplementedError()
     
     def assign_homes_instr(self, i: Instr, home: dict[Variable,arg]) -> Instr:
+        assign_homes_arg = lambda a: self.assign_homes_arg(a,home)
         match i:
             case ASM_COMMENT():
                 return i
+            case TailJump(func,arity):
+                return TailJump(assign_homes_arg(func),arity)
             case IndirectCallq(func,argc):
                 return IndirectCallq(self.assign_homes_arg(func,home),argc)
             case _:
@@ -430,6 +448,9 @@ class Compiler(Compiler_Ltup):
                 ]
             case IndirectCallq():
                 return [i]
+            case TailJump(func,arity) if func != Reg('rax'):
+                return [*self.patch_instr(Instr('movq',[func,Reg('rax')])),
+                        TailJump(Reg('rax'),arity)]
             case _:
                 return super().patch_instr(i)
     
@@ -462,11 +483,11 @@ class Compiler(Compiler_Ltup):
                     Instr('movq',[Global('rootstack_begin'),Reg('r15')]),
                     # Instr('movq',[Immediate(0),Deref('r15',0)]),
                 ] if var == 'main' else []
-                
                 prelude_init_gc += [
                     Instr('addq',[Immediate(root_stack_sz),Reg('r15')]),
                 ]
                 jmp = [Jump(label_name(var)+'_start'),]
+                
                 conclusion_gc = [
                     Instr('subq',[Immediate(root_stack_sz),Reg('r15')])
                 ]
@@ -475,8 +496,24 @@ class Compiler(Compiler_Ltup):
                     Instr('popq',[Reg('rbp')]),
                     Instr('retq',[]),
                 ]
+                
+                def translate_tail(i:instr):
+                    match i:
+                        case TailJump(f,arity):
+                            return [
+                                Instr('addq',[Immediate(sz),Reg('rsp')]),
+                                Instr('popq',[Reg('rbp')]),
+                                IndirectJump(f),
+                            ]
+                        case _:
+                            return [i]
+                
+                from functools import reduce
+                from operator import add
                 blocks[label_name(var)] = prelude + prelude_init_gc + jmp
                 blocks[label_name(var)+'_conclusion'] = conclusion_gc + conclusion
+                blocks = {lbl:reduce(add,(translate_tail(i) for i in instrs)) for lbl,instrs in blocks.items()}
+                
                 return {label_name(var):blocks}
             case _:
                 raise NotImplementedError("prelude_and_conclusion_each, unexpected ", defn)

@@ -79,7 +79,8 @@ if __name__ == '__main__':
         enable_tracing()
     
     if args.run_once is True:
-        path = os.getcwd() + '/tests/fun/primesum.py'
+        path = os.getcwd() + '/tests/fun/map.py'
+        # path = os.getcwd() + '/tmp/infinite.py'
         
         run_one_test(path,
                     'fun',

@@ -1,11 +1,8 @@
-def mul(a:int,b:int) -> int:
-    init = 0
-    i = 0
-    while i < b:
-        init = init + a
-        i = i+1
-    return init
+def mul(x:int,y:int) -> int:
+    return mul_iter(x,y,0)
 
+def mul_iter(x:int,y:int,r:int) -> int:
+    return r if y == 0 else mul_iter(x,y-1,r+x)
 
 def remainder(x:int,d:int) -> int:
     return remainder(x+(-d),d) if x+(-d) >= 0 else x
@@ -21,4 +18,5 @@ def smallest_divisor_iter(x:int,d:int) -> int:
 def smallest_divisor(x:int) -> int:
     return smallest_divisor_iter(x,2)
 
-print(smallest_divisor(23))
+p = 16777213
+print(1 if smallest_divisor(p) == p else 0)
