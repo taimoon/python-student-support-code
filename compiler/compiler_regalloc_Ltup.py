@@ -10,7 +10,7 @@ from x86_ast import instr, location
 
 
 class Compiler(Compiler_Ltup,Compiler_Regalloc):
-    ###
+    ### Uncover live
     def write_vars(self, i: instr) -> Set[location]:
         match i:
             case Instr('sarq',[Immediate(),w]):
@@ -110,7 +110,7 @@ class Compiler(Compiler_Ltup,Compiler_Regalloc):
             Instr('retq',[]),
         ]
         match p:
-            case CProgram(body):
+            case X86Program({**body}):
                 body[label_name('main')] = prelude + prelude_init_gc + jmp
                 body[label_name('conclusion')] = conclusion_gc + conclusion
                 return X86Program(body)

@@ -17,7 +17,7 @@ from x86_ast import *
 from utils import (
     FunRef,IntType,TailCall,
     CProgram, stmt, CProgramDefs,
-    make_assigns, Begin, TupleType,make_begin
+    make_assigns, Begin, TupleType, make_begin
     )
 from compiler.compiler_Lif import Blocks
 from compiler.compiler_Ltup import Compiler as Compiler_Ltup
@@ -400,7 +400,7 @@ class Compiler(Compiler_Ltup):
     def assign_fun(self, defn: FunctionDef) -> FunctionDef:
         match defn:
             case FunctionDef(var,[],blocks,None,IntType(),None):
-                blocks = CProgram(blocks)
+                blocks = X86Program(blocks)
                 blocks.var_types = defn.var_types
                 blocks,home = super().assign_homes_spilled(blocks)
                 defn = FunctionDef(var,[],blocks.body,None,IntType(),None)
@@ -434,7 +434,7 @@ class Compiler(Compiler_Ltup):
     def patch_fun(self, defn: FunctionDef) -> FunctionDef:
         match defn:
             case FunctionDef(var,[],blocks,None,IntType(),None):
-                blocks = super().patch_instructions(CProgram(blocks)).body
+                blocks = super().patch_instructions(X86Program(blocks)).body
                 _defn = FunctionDef(var,[],blocks,None,IntType(),None)
                 _defn.spilled,_defn.tuples = defn.spilled,defn.tuples
                 return _defn

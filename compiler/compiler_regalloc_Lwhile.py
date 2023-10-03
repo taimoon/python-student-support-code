@@ -1,15 +1,13 @@
 from ast import *
-from utils import (CProgram)
 from graph import transpose 
 from x86_ast import *
-from typing import (List, Set,Tuple,Dict)
 from dataflow_analysis import analyze_dataflow
 from compiler.compiler_Lwhile import Compiler as Compiler_Lwhile
 from compiler.compiler_regalloc_Lif import Compiler as Compiler_Regalloc
 
 
 class Compiler(Compiler_Lwhile,Compiler_Regalloc):
-    def uncover_live(self, p: CProgram) -> Dict[str,Dict[instr, Set[location]]]:
+    def uncover_live(self, p: X86Program) -> dict[str,dict[instr, set[location]]]:
         cfg = self.control_flow_graph_from(p)
         cfg = transpose(cfg)
         live_bf_block = {lbl:set() for lbl in cfg.vertices()}

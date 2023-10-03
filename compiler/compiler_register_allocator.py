@@ -1,16 +1,17 @@
 import compiler.compiler as compiler
 from graph import UndirectedAdjList
-from typing import List, Tuple, Set, Dict
 from ast import *
 from x86_ast import *
-from typing import Set, Dict, Tuple
 
 # Skeleton code for the chapter on Register Allocation
 
 class Compiler(compiler.Compiler):
+    # freely used by called function (the callee)
     caller_save = {Reg("rax"),Reg("rcx"),Reg("rdx"),
                    Reg("rsi"),Reg("rdi"),Reg("r8"),
                    Reg("r9"),Reg("r10"),Reg("r11")}
+    
+    # these values are preserved when calling the function; called function must restore these values
     callee_save = {Reg("rsp"),Reg("rbp"),Reg("rbx"),
                 Reg("r12"),Reg("r13"),Reg("r14"),Reg("r15")}
     
@@ -35,27 +36,35 @@ class Compiler(compiler.Compiler):
     ###########################################################################
     # Uncover Live
     ###########################################################################
+    def uncover_live(self, p: X86Program) -> dict[instr, set[location]]:
+        '''
+        Return a dictionary that maps each instruction to its live-after set.
+        '''
+        return self.uncover_instrs(p.body)
+    
     @staticmethod
-    def filter_immediate(xs):
+    def filter_immediate(xs:set) -> set[location]:
         return {x for x in xs if isinstance(x,location)}
     
-    def read_vars(self, i: instr) -> Set[location]:
+    def read_vars(self, i: instr) -> set[location]:
         # YOUR CODE HERE
         filter_immediate = self.filter_immediate
         match i:
-            case Instr('movq'|'subq'|'addq'|'xorq'|'andq',[r,w]):
+            case Instr('movq',[r,w]):
                 return filter_immediate({r})
+            case Instr('subq'|'addq'|'xorq'|'andq',[r,w]):
+                return filter_immediate({r,w})
             case Instr('negq'|'pushq'|'popq',[a]):
                 return filter_immediate({a})
-            case Callq(_,argc):
-                return set(self.arg_pass_ord[:argc])
+            case Callq(_,arity):
+                return set(self.arg_pass_ord[:arity])
             case Instr('retq',_):
                 return set()
             case _:
                 raise NotImplementedError('read_vars',i)
 
     
-    def write_vars(self, i: instr) -> Set[location]:
+    def write_vars(self, i: instr) -> set[location]:
         filter_immediate = self.filter_immediate
         match i:
             case Instr('movq'|'subq'|'addq'|'xorq'|'andq',[r,w]):
@@ -66,24 +75,27 @@ class Compiler(compiler.Compiler):
                 return set(self.caller_save)
             case Instr('retq',_):
                 return {Reg('rax')}
+            case Callq():
+                return set(self.caller_save)
             case _:
                 raise NotImplementedError('write_vars, unexpected: ',i)
     
-    def live_before(self,i:instr,live_after:dict[instr,set]) -> set[instr]:
+    def live_before(self,i:instr,live_after:dict[instr,set]) -> set[location]:
         return set.union(
             set.difference(live_after[i],self.write_vars(i)),
             self.read_vars(i),
         )
     
-    def uncover_live(self, p: X86Program) -> Dict[instr, Set[location]]:
+    def uncover_instrs(self, instrs: list[instr]) -> dict[instr, set[location]]:
         '''
         Return a dictionary that maps each instruction to its live-after set.
         '''
         live_after = dict()
         after_set = set()
         live_before = lambda i: self.live_before(i,live_after)
-        for i in reversed(p.body):
-            if i in live_after: raise Exception('uncover live, repeated instr',i,p)
+        
+        for i in reversed(instrs):
+            if i in live_after: raise Exception('uncover live, repeated instr',i)
             live_after[i] = after_set
             after_set = live_before(i)
         
@@ -93,15 +105,21 @@ class Compiler(compiler.Compiler):
     # Build Interference
     ############################################################################
     
-    def build_interference(self, instrs:list[instr],
-                           live_after: Dict[Instr, Set[location]]) -> UndirectedAdjList:
+    def build_interference(self, 
+                           p: X86Program,
+                           live_after: dict[instr, set[location]]) -> UndirectedAdjList:
+        return self.build_interference_instrs(p.body,live_after)
+    
+    def build_interference_instrs(self, instrs:list[instr],
+                           live_after: dict[instr, set[location]]) -> UndirectedAdjList:
         adj = UndirectedAdjList()
         for i in instrs:
             self.add_interference(i,live_after,adj)
         return adj
-
-    def add_interference(self, i: Instr,
-                           live_after: Dict[instr, Set[location]], adj: UndirectedAdjList) -> None:
+    
+    def add_interference(self, i: instr,
+                         live_after: dict[instr, set[location]], 
+                         adj: UndirectedAdjList) -> None:
         match i:
             case Instr('movq'|'movzbq',[s,d]):
                 adj.add_vertex(d)
@@ -138,7 +156,7 @@ class Compiler(compiler.Compiler):
     # Allocate Registers
     ############################################################################
     
-    def saturation(self,G,colors,u):
+    def saturation(self,G:UndirectedAdjList,colors:dict[location,int],u) -> set[int]:
         'the set of numbers that are no longer available'
         # workaround
         if hasattr(u,'key'):
@@ -148,30 +166,34 @@ class Compiler(compiler.Compiler):
     
     def color_graph(self, 
                     graph: UndirectedAdjList,
-                    variables: Set[location]) \
-        -> Tuple[Dict[location, int], Set[location]]:
+                    variables: set[location]) \
+        -> tuple[dict[location, int], set[location]]:
         '''
         Returns the coloring and the set of spilled variables
+        This function should return a mapping of variables to their colors (represented as natural numbers).
         '''
 
         reg2int = lambda v: self.reg2int.get(v,None)
-        colors = {v:reg2int(v) for v in variables}
+        colors = {v:reg2int(v) for v in graph.vertices()}
         saturation = lambda u : self.saturation(graph,colors,u)
         
         def less(u,v):
             return len(saturation(u)) <= len(saturation(v))
         
-        dom = set(range(len(variables)))
+        dom = [v for v in graph.vertices() if colors[v] is None or colors[v] >= 0]
+        dom = set(range(len(dom)))
         
         from priority_queue import PriorityQueue
         W = PriorityQueue(less)
-        for v in tuple(graph.vertices()):
+        for v in graph.vertices():
             W.push(v)
         
         while not W.empty():
             u = W.pop()
             if colors[u] is None:
+                # pick the smallest possible number
                 colors[u] = min(dom.difference(saturation(u)))
+            
             for v in graph.adjacent(u):
                 W.increase_key(v)
             
@@ -180,10 +202,10 @@ class Compiler(compiler.Compiler):
         
         return colors,spilled
     
-    def allocate_register(self,i: instr, colors: Dict[location, int]) -> instr:
+    def allocate_register(self,i: instr, colors: dict[location, int]) -> instr:
         match i:
             case Instr(op,args):
-                return Instr(op,[a if isinstance(a,Immediate) else colors[a] for a in args])
+                return Instr(op,[(a if isinstance(a,Immediate) else colors[a]) for a in args])
             case Callq():
                 return i
             case _:
@@ -191,9 +213,10 @@ class Compiler(compiler.Compiler):
     
     def allocate_registers(self, p: X86Program,
                            graph: UndirectedAdjList,
-                           used_callee: Set[Reg]) -> X86Program:
+                           used_callee: set[Reg]) -> X86Program:
         colors,spilled = self.color_graph(graph=graph,
-                                          variables=graph.vertices())
+                                          variables={v for v in graph.vertices() 
+                                                     if isinstance(v,Variable)})
         
         reg_n = max(self.int2reg)
         f = lambda n : self.int2reg.get(n,Deref('rbp',-8*(n-reg_n+1)))
@@ -215,8 +238,7 @@ class Compiler(compiler.Compiler):
 
     def assign_homes(self, pseudo_x86: X86Program) -> X86Program:
         live_after = self.uncover_live(pseudo_x86)
-        graph = self.build_interference(pseudo_x86.body,live_after)
-        
+        graph = self.build_interference(pseudo_x86,live_after)
         self.used_callee = set()
         return self.allocate_registers(pseudo_x86,graph,used_callee=self.used_callee)
         

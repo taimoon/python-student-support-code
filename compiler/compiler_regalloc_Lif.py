@@ -1,16 +1,11 @@
 from ast import *
-from ast import Dict, Set
-from utils import (CProgram,stmt)
 from graph import UndirectedAdjList, topological_sort, transpose, DirectedAdjList
 from x86_ast import *
-from typing import (List, Set,Tuple,Dict)
-
-Blocks = Dict[str,List[stmt]]
 from compiler.compiler_Lif import Compiler as Compiler_Lif
 from compiler.compiler_register_allocator import Compiler as Compiler_Reg_Allocator
 
 class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
-    def control_flow_graph_from(self, p: CProgram) -> DirectedAdjList:
+    def control_flow_graph_from(self, p: X86Program) -> DirectedAdjList:
         cfg=DirectedAdjList()
         for lbl,ss in p.body.items():
             cfg.add_vertex(lbl)
@@ -38,7 +33,7 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             after_set = live_before(i)
         return live_after
         
-    def uncover_live(self, p: CProgram) -> Dict[str,Dict[instr, Set[location]]]:
+    def uncover_live(self, p: X86Program) -> dict[str,dict[instr, set[location]]]:
         cfg = self.control_flow_graph_from(p)
         cfg = transpose(cfg)
         blocks = topological_sort(cfg)
@@ -57,7 +52,7 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
         assert(live_before(p.body['start'][0],live_after['start'],live_b4_block) == set())
         return live_after
     
-    def read_vars(self, i: instr) -> Set[location]:
+    def read_vars(self, i: instr) -> set[location]:
         filter_immediate = self.filter_immediate
         match i:
             case Instr(set,[a]) if set[:3] == 'set':
@@ -71,7 +66,7 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             case _:
                 return super().read_vars(i)
     
-    def write_vars(self, i: instr) -> Set[location]:
+    def write_vars(self, i: instr) -> set[location]:
         filter_immediate = self.filter_immediate
         match i:
             case Instr(set,[a]) if set[:3] == 'set':
@@ -85,14 +80,17 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             case _:
                 return super().write_vars(i)
     
-    def build_interference(self, instrs: dict[str, list[instr]], live_after: Dict[str,Dict[instr, Set[location]]]) -> UndirectedAdjList:
+    def build_interference(self, p: X86Program, live_after: dict[instr, set[location]]) -> UndirectedAdjList:
+        return self.build_interference_instrs(p.body,live_after)
+    
+    def build_interference_instrs(self, instrs: dict[str, list[instr]], live_after: dict[str,dict[instr, set[location]]]) -> UndirectedAdjList:
         adj = UndirectedAdjList()
         for lbl,ss in instrs.items():
             for i in ss:
                 self.add_interference(i,live_after[lbl],adj)
         return adj
     
-    def add_interference(self, i: Instr, live_after: Dict[instr, Set[location]], adj: UndirectedAdjList) -> None:
+    def add_interference(self, i: instr, live_after: dict[instr, set[location]], adj: UndirectedAdjList) -> None:
         match i:
             case Instr('cmpq',[s,d]):
                 'The second argument of the cmpq instruction must not be an immediate value (such as an integer).'
@@ -108,23 +106,23 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             case _:
                 return super().add_interference(i, live_after, adj)
     
-    def assign_homes(self, p: CProgram) -> CProgram:
+    def assign_homes(self, p: X86Program) -> X86Program:
         live_after = self.uncover_live(p)
         self.used_callee = set()
         body:dict = p.body
         
         self.used_callee = set()
-        graph = self.build_interference(p.body,live_after)
+        graph = self.build_interference(p,live_after)
         for lbl,ss in body.items():
             used_callee = set()
             body[lbl] = self.allocate_registers(ss,graph,used_callee=used_callee)
             self.used_callee = set.union(self.used_callee,used_callee)
-        return CProgram(body)
+        return X86Program(body)
     
-    def allocate_registers(self, p: list[instr], graph: UndirectedAdjList, used_callee: Set[Reg]) -> list[instr]:
+    def allocate_registers(self, p: list[instr], graph: UndirectedAdjList, used_callee: set[Reg]) -> list[instr]:
         return super().allocate_registers(X86Program(p), graph, used_callee).body
     
-    def allocate_register(self, i: instr, colors: Dict[location, int]) -> instr:
+    def allocate_register(self, i: instr, colors: dict[location, int]) -> instr:
         match i:
             case Jump()|JumpIf():
                 return i
@@ -132,7 +130,7 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
                 return super().allocate_register(i, colors)
     
     
-    def prelude_and_conclusion(self, p: CProgram) -> X86Program:
+    def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         align = lambda n : n+(16-n%16)
         C = len(self.used_callee)
         S = len(self.spilled)
@@ -152,7 +150,7 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             Instr('retq',[]),
         ]
         match p:
-            case CProgram(body):
+            case X86Program({**body}):
                 body[label_name('main')] = prelude
                 body[label_name('conclusion')] = conclusion
                 return X86Program(body)

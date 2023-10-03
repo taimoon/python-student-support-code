@@ -1,9 +1,6 @@
 from ast import *
-from ast import List, stmt
 from x86_ast import *
-from compiler.compiler import Temporaries
-from utils import (CProgram, stmt, make_begin, Goto)
-from typing import (List, Set,Tuple,Dict)
+from utils import (stmt, make_begin, Goto)
 
 from compiler.compiler_Lif import Compiler as Compiler_Lif
 class Compiler(Compiler_Lif):
@@ -16,7 +13,7 @@ class Compiler(Compiler_Lif):
             case _:
                 return super().expand_stmt(s)
             
-    def rco_stmt(self, s: stmt) -> List[stmt]:
+    def rco_stmt(self, s: stmt) -> list[stmt]:
         match s:
             case While(e,[*ss],[]):
                 e,bs = self.rco_exp(e,True)
@@ -26,7 +23,7 @@ class Compiler(Compiler_Lif):
             case _:
                 return super().rco_stmt(s)
     
-    def explicate_stmt(self, s, cont, basic_blocks) -> List[stmt]:
+    def explicate_stmt(self, s, cont, basic_blocks) -> list[stmt]:
         match s:
             case While(e,[*ss],[]):
                 # workaround

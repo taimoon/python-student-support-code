@@ -5,9 +5,8 @@ from utils import (
     make_assigns, make_begin, Goto, stmt,
     )
 from x86_ast import *
-from typing import (List,Tuple,Dict)
 
-Blocks = Dict[str,List[stmt]]
+Blocks = dict[str,list[stmt]]
 import compiler.compiler as compiler
 
 class Compiler(compiler.Compiler):
@@ -69,7 +68,7 @@ class Compiler(compiler.Compiler):
     def remove_complex_operands(self, p: Module) -> Module:
         return super().remove_complex_operands(p)
     
-    def rco_exp(self, e: expr, need_atomic: bool) -> Tuple[expr, Temporaries]:
+    def rco_exp(self, e: expr, need_atomic: bool) -> tuple[expr, Temporaries]:
         atomize = self.atomize
         rco_exp = self.rco_exp
         match e:
@@ -98,7 +97,7 @@ class Compiler(compiler.Compiler):
             case _:
                 return super().rco_exp(e, need_atomic)
     
-    def rco_stmt(self, s: stmt) -> List[stmt]:
+    def rco_stmt(self, s: stmt) -> list[stmt]:
         rco_stmts = self.rco_stmts
         match s:
             case If(test,body,orelse):
@@ -127,8 +126,8 @@ class Compiler(compiler.Compiler):
             cont = self.explicate_stmt(s,cont,basic_blocks)
         return cont
     
-    def create_block(self,stmts:List[stmt],basic_blocks:Blocks) \
-        -> List[Goto]:
+    def create_block(self,stmts:list[stmt],basic_blocks:Blocks) \
+        -> list[Goto]:
         match stmts:
             case [Goto(l)]:
                 return stmts
@@ -138,7 +137,7 @@ class Compiler(compiler.Compiler):
                 return [Goto(label)]
 
     def explicate_effect(self, e, cont, basic_blocks:Blocks) \
-        -> List[stmt]:
+        -> list[stmt]:
         match e:
             case IfExp(test, body, orelse):
                 raise NotImplementedError()
@@ -152,7 +151,7 @@ class Compiler(compiler.Compiler):
                 raise NotImplementedError(self.explicate_effect.__name__,'unexpected: ',e)
 
     def explicate_assign(self, rhs, lhs, cont, basic_blocks) \
-        -> List[stmt]:
+        -> list[stmt]:
         explicate_assign = self.explicate_assign
         match rhs:
             case IfExp(test, body, orelse):
@@ -200,7 +199,7 @@ class Compiler(compiler.Compiler):
                 cnd = Compare(cnd,[Eq()],[Constant(False)])
                 return [If(cnd, goto_els(), goto_thn())]
     
-    def explicate_stmt(self, s, cont, basic_blocks) -> List[stmt]:
+    def explicate_stmt(self, s, cont, basic_blocks) -> list[stmt]:
         match s:
             case Assign([lhs], rhs):
                 return self.explicate_assign(rhs,lhs,cont,basic_blocks)
@@ -218,8 +217,8 @@ class Compiler(compiler.Compiler):
     # select instruction
     def select_instructions(self, p: CProgram) -> X86Program:
         match p:
-            case CProgram(body):
-                return CProgram({lbl:self.select_stmts(ss) for lbl,ss in body.items()})
+            case CProgram({**body}):
+                return X86Program({lbl:self.select_stmts(ss) for lbl,ss in body.items()})
             case _:
                 return super().select_instructions(p)
     
@@ -236,7 +235,7 @@ class Compiler(compiler.Compiler):
     def select_cc(self,cmp) -> str:
         return self.cc_corpsd[cmp.__class__]
     
-    def select_stmt(self, s: stmt) -> List[instr]:
+    def select_stmt(self, s: stmt) -> list[instr]:
         select_arg = self.select_arg
         match s:
             case Assign([name],UnaryOp(Not(),v)):
@@ -279,13 +278,13 @@ class Compiler(compiler.Compiler):
                 return super().select_stmt(s)
     
     # assign homes
-    def assign_homes_spilled(self, p: CProgram) -> tuple[CProgram,dict]:
+    def assign_homes_spilled(self, p: X86Program) -> tuple[X86Program,dict]:
         match p:
-            case CProgram(body):
+            case X86Program({**body}):
                 home = self.init_home()
                 for lbl,ss in body.items():
                     body[lbl] = self.assign_homes_instrs(ss,home)
-                return CProgram(body),home
+                return X86Program(body),home
             case _:
                 raise NotImplementedError()
     
@@ -294,14 +293,14 @@ class Compiler(compiler.Compiler):
         return dict()
     
     
-    def assign_homes(self, p: CProgram) -> CProgram:
+    def assign_homes(self, p: X86Program) -> X86Program:
         p,home = self.assign_homes_spilled(p)
         self.spilled = set(home.keys())
         return p
     
     
     def assign_homes_instr(self, i: instr,
-                           home: Dict[Variable, arg]) -> instr:
+                           home: dict[Variable, arg]) -> instr:
         match i:
             case Jump()|JumpIf():
                 return i
@@ -309,10 +308,10 @@ class Compiler(compiler.Compiler):
                 return super().assign_homes_instr(i,home)
     
     # patch_instructions
-    def patch_instructions(self, p: CProgram) -> CProgram:
+    def patch_instructions(self, p: X86Program) -> X86Program:
         match p:
-            case CProgram(body):
-                return CProgram({lbl:self.patch_instrs(ss) for lbl,ss in body.items()})
+            case X86Program({**body}):
+                return X86Program({lbl:self.patch_instrs(ss) for lbl,ss in body.items()})
             case _:
                 raise NotImplementedError('patch_instructions, unknown argument', p)
         
@@ -335,7 +334,7 @@ class Compiler(compiler.Compiler):
             case _:
                 return super().patch_instr(i)
     
-    def prelude_and_conclusion(self, p: CProgram) -> X86Program:
+    def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         sz = len(self.spilled)*8
         sz = sz if sz%16 == 0 else sz+8
         prelude = [
@@ -350,7 +349,7 @@ class Compiler(compiler.Compiler):
             Instr('retq',[]),
         ]
         match p:
-            case CProgram(body):
+            case X86Program({**body}):
                 body[label_name('main')] = prelude + jmp
                 body[label_name('conclusion')] = conclusion
                 return X86ProgramIf(body)

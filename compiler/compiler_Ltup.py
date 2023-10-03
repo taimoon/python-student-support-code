@@ -316,14 +316,14 @@ class Compiler(Compiler_Lwhile):
                 raise NotImplementedError("assign_homes_arg, bad argument: ", a)
     
     # patch_instructions
-    def patch_instructions(self, p: CProgram) -> CProgram:
+    def patch_instructions(self, p: X86Program) -> X86Program:
         return super().patch_instructions(p)
     
     def is_mem_ref(self,a: arg) -> bool:
         return isinstance(a,Global) or super().is_mem_ref(a)
     
     # prelude_and_conclusion
-    def prelude_and_conclusion(self, p: CProgram) -> X86Program:
+    def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         sz = len(self.spilled)*8
         sz = sz if sz%16 == 0 else sz+8
         root_stack_sz = len(self.tuples)*8
@@ -352,7 +352,7 @@ class Compiler(Compiler_Lwhile):
             Instr('retq',[]),
         ]
         match p:
-            case CProgram(body):
+            case X86Program({**body}):
                 from compiler.compiler_Lif import X86ProgramIf
                 body[label_name('main')] = prelude + prelude_init_gc + jmp
                 body[label_name('conclusion')] = conclusion_gc + conclusion
