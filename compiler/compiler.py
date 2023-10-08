@@ -195,7 +195,7 @@ class Compiler:
         
     def assign_homes(self, p: X86Program) -> X86Program:
         p,home = self.assign_homes_spilled(p)
-        self.spilled = set(home.keys())
+        p.spilled = set(home.keys())
         return p
 
     ############################################################################
@@ -232,7 +232,8 @@ class Compiler:
     def patch_instructions(self, p: X86Program) -> X86Program:
         match p:
             case X86Program(body):
-                return X86Program(self.patch_instrs(body))
+                p,p.spilled = X86Program(self.patch_instrs(body)),p.spilled
+                return p
             case _:
                 raise NotImplementedError('patch_instructions, unknown argument', p)
 
@@ -241,7 +242,7 @@ class Compiler:
     ############################################################################
 
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
-        sz = len(self.spilled)*8
+        sz = len(p.spilled)*8
         sz = sz if sz%16 == 0 else sz+8
         prelude = [
             Instr('pushq',[Reg('rbp')]),

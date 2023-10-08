@@ -268,11 +268,15 @@ class Compiler(Compiler_Lwhile):
             case _:
                 return super().select_stmt(s)
     # assign_homes
-    def assign_homes(self, p: CProgram) -> CProgram:
-        p,home = self.assign_homes_spilled(p)
-        self.tuples = set(home['tuple'].keys())
-        self.spilled = set(home['var'].keys())
-        return p
+    def assign_homes(self, p: X86Program) -> X86Program:
+        match p:
+            case X86Program({**body}):
+                p,home = self.assign_homes_spilled(p)
+                p.tuples = set(home['tuple'].keys())
+                p.spilled = set(home['var'].keys())
+                return p
+            case _:
+                raise NotImplementedError('assign_homes, unexpected arguments', p)
     
     def init_home(self):
         return {'tuple':{},'var':{}}
@@ -317,16 +321,17 @@ class Compiler(Compiler_Lwhile):
     
     # patch_instructions
     def patch_instructions(self, p: X86Program) -> X86Program:
-        return super().patch_instructions(p)
+        p,p.tuples = super().patch_instructions(p),p.tuples
+        return p
     
     def is_mem_ref(self,a: arg) -> bool:
         return isinstance(a,Global) or super().is_mem_ref(a)
     
     # prelude_and_conclusion
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
-        sz = len(self.spilled)*8
+        sz = len(p.spilled)*8
         sz = sz if sz%16 == 0 else sz+8
-        root_stack_sz = len(self.tuples)*8
+        root_stack_sz = len(p.tuples)*8
         prelude = [
             Instr('pushq',[Reg('rbp')]),
             Instr('movq',[Reg('rsp'),Reg('rbp')]),
@@ -339,7 +344,7 @@ class Compiler(Compiler_Lwhile):
             Callq("initialize",2),
             Instr('movq',[Global('rootstack_begin'),Reg('r15')]),
             *[Instr('movq',[Immediate(0),Deref('r15',i*8)]) 
-              for i,*_ in enumerate(self.tuples)],
+              for i,*_ in enumerate(p.tuples)],
             Instr('addq',[Immediate(root_stack_sz),Reg('r15')]),
         ]
         jmp = [Jump('start'),]

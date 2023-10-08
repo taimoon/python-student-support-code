@@ -3,6 +3,7 @@ from graph import UndirectedAdjList, topological_sort, transpose, DirectedAdjLis
 from x86_ast import *
 from compiler.compiler_Lif import Compiler as Compiler_Lif
 from compiler.compiler_register_allocator import Compiler as Compiler_Reg_Allocator
+from x86_ast import X86Program
 
 class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
     def control_flow_graph_from(self, p: X86Program) -> DirectedAdjList:
@@ -15,8 +16,8 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
                         cfg.add_edge(lbl,dest)
         return cfg
     
-    def live_before(self, i: instr, live_after: dict[instr, set], live_b4_block: dict[str,set]) -> set[instr]:
-        live_before = lambda i: Compiler_Reg_Allocator.live_before(self,i,live_after)
+    def live_before(self, i: instr, after: set[location], live_b4_block: dict[str,set]) -> set[instr]:
+        live_before = lambda i: Compiler_Reg_Allocator.live_before(self,i,after)
         match i:
             case Jump(label=label):
                 return live_b4_block[label]
@@ -25,13 +26,9 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             case _:
                 return live_before(i)
         
-    def uncover_block(self,instrs,live_after,live_b4_block) -> dict[instr,set[location]]:
-        live_before = lambda i: self.live_before(i,live_after,live_b4_block)
-        after_set = set()
-        for i in reversed(instrs):
-            live_after[i] = after_set
-            after_set = live_before(i)
-        return live_after
+    def uncover_block(self,instrs,live_b4_block) -> dict[instr,set[location]]:
+        live_before = lambda i,live_after:self.live_before(i,live_after,live_b4_block)
+        return Compiler_Reg_Allocator.uncover_instrs(self,instrs,live_before)
         
     def uncover_live(self, p: X86Program) -> dict[str,dict[instr, set[location]]]:
         cfg = self.control_flow_graph_from(p)
@@ -39,17 +36,18 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
         blocks = topological_sort(cfg)
         
         live_b4_block = {blocks[0]:set()}
-        live_after = {lbl:dict() for lbl in blocks}
+        live_after = {lbl:None for lbl in blocks}
         
         live_before = self.live_before
         
         labels = (lbl for lbl in blocks if lbl != 'conclusion')
         for lbl in labels:
             ss = p.body[lbl]
-            live_after[lbl] = self.uncover_block(ss,live_after[lbl],live_b4_block)
-            live_b4_block[lbl] = live_before(ss[0],live_after[lbl],live_b4_block)
-        
-        assert(live_before(p.body['start'][0],live_after['start'],live_b4_block) == set())
+            live_after[lbl] = self.uncover_block(ss,live_b4_block)
+            s,*_ = ss
+            live_b4_block[lbl] = live_before(s,live_after[lbl][s],live_b4_block)
+        s,*_ = p.body['start']
+        assert(live_before(s,live_after['start'][s],live_b4_block) == set())
         return live_after
     
     def read_vars(self, i: instr) -> set[location]:
@@ -106,21 +104,28 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             case _:
                 return super().add_interference(i, live_after, adj)
     
+    ### assign_homes
     def assign_homes(self, p: X86Program) -> X86Program:
-        live_after = self.uncover_live(p)
-        self.used_callee = set()
-        body:dict = p.body
-        
-        self.used_callee = set()
-        graph = self.build_interference(p,live_after)
-        for lbl,ss in body.items():
-            used_callee = set()
-            body[lbl] = self.allocate_registers(ss,graph,used_callee=used_callee)
-            self.used_callee = set.union(self.used_callee,used_callee)
-        return X86Program(body)
-    
-    def allocate_registers(self, p: list[instr], graph: UndirectedAdjList, used_callee: set[Reg]) -> list[instr]:
-        return super().allocate_registers(X86Program(p), graph, used_callee).body
+        match p:
+            case X86Program({**body}):
+                live_after = self.uncover_live(p)
+                graph = self.build_interference(p,live_after)
+                acm_used_callee = set()
+                spilled_hist = []
+                for lbl,ss in body.items():
+                    used_callee = set()
+                    body[lbl],used_callee,spilled = self.allocate_instrs(ss,graph)
+                    acm_used_callee = set.union(acm_used_callee,used_callee)
+                    spilled_hist += [spilled]
+                
+                assert(all(l==r for l,r in zip(spilled_hist[:-1],spilled_hist[1:])))
+                
+                p = X86Program(body)
+                p.spilled = spilled
+                p.used_callee = acm_used_callee
+                return p
+            case _:
+                raise NotImplementedError('TODO')
     
     def allocate_register(self, i: instr, colors: dict[location, int]) -> instr:
         match i:
@@ -129,11 +134,15 @@ class Compiler(Compiler_Lif,Compiler_Reg_Allocator):
             case _:
                 return super().allocate_register(i, colors)
     
+    ### patch_instructions
+    def patch_instructions(self, p: X86Program) -> X86Program:
+        p,p.used_callee = super().patch_instructions(p),p.used_callee
+        return p
     
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         align = lambda n : n+(16-n%16)
-        C = len(self.used_callee)
-        S = len(self.spilled)
+        C = len(p.used_callee)
+        S = len(p.spilled)
         A = align(8*S + 8*C) - 8*C
         
         A = align(A) if A%16 != 0 else A

@@ -2,8 +2,14 @@ import compiler.compiler as compiler
 from graph import UndirectedAdjList
 from ast import *
 from x86_ast import *
+from typing import Callable
 
-# Skeleton code for the chapter on Register Allocation
+'''
+The difference from previous Compiler is made in assign_home and prelude_and_generate
+The new pass for assign_home
+liveness_analysis,uncover_live -> build_interference_graph -> coloring -> allocate_register -> assign_home (end)
+
+'''
 
 class Compiler(compiler.Compiler):
     # freely used by called function (the callee)
@@ -13,7 +19,7 @@ class Compiler(compiler.Compiler):
     
     # these values are preserved when calling the function; called function must restore these values
     callee_save = {Reg("rsp"),Reg("rbp"),Reg("rbx"),
-                Reg("r12"),Reg("r13"),Reg("r14"),Reg("r15")}
+                   Reg("r12"),Reg("r13"),Reg("r14"),Reg("r15")}
     
     caller_save = frozenset(caller_save)
     callee_save = frozenset(callee_save)
@@ -40,7 +46,7 @@ class Compiler(compiler.Compiler):
         '''
         Return a dictionary that maps each instruction to its live-after set.
         '''
-        return self.uncover_instrs(p.body)
+        return self.uncover_instrs(p.body,self.live_before)
     
     @staticmethod
     def filter_immediate(xs:set) -> set[location]:
@@ -71,33 +77,30 @@ class Compiler(compiler.Compiler):
                 return filter_immediate({w})
             case Instr('negq'|'pushq'|'popq',[a]):
                 return filter_immediate({a})
-            case i if isinstance(i,Callq):
+            case Callq():
                 return set(self.caller_save)
             case Instr('retq',_):
                 return {Reg('rax')}
-            case Callq():
-                return set(self.caller_save)
             case _:
                 raise NotImplementedError('write_vars, unexpected: ',i)
     
-    def live_before(self,i:instr,live_after:dict[instr,set]) -> set[location]:
+    def live_before(self,i:instr,after:set[location]) -> set[location]:
         return set.union(
-            set.difference(live_after[i],self.write_vars(i)),
-            self.read_vars(i),
+            set.difference(after,self.write_vars(i)),
+            self.read_vars(i)
         )
     
-    def uncover_instrs(self, instrs: list[instr]) -> dict[instr, set[location]]:
+    def uncover_instrs(self, instrs: list[instr], live_before:Callable[[instr,set[location]],set[location]]) -> dict[instr, set[location]]:
         '''
         Return a dictionary that maps each instruction to its live-after set.
         '''
         live_after = dict()
         after_set = set()
-        live_before = lambda i: self.live_before(i,live_after)
         
         for i in reversed(instrs):
             if i in live_after: raise Exception('uncover live, repeated instr',i)
             live_after[i] = after_set
-            after_set = live_before(i)
+            after_set = live_before(i,after_set)
         
         return live_after
 
@@ -211,9 +214,8 @@ class Compiler(compiler.Compiler):
             case _:
                 raise NotImplementedError('allocate_register',i)
     
-    def allocate_registers(self, p: X86Program,
-                           graph: UndirectedAdjList,
-                           used_callee: set[Reg]) -> X86Program:
+    def allocate_instrs(self, instrs: list[instr], graph: UndirectedAdjList) -> tuple[list[instr], set[Reg], set[location]]:
+        '''returns: allocated instrustions,used_callee,spilled'''
         colors,spilled = self.color_graph(graph=graph,
                                           variables={v for v in graph.vertices() 
                                                      if isinstance(v,Variable)})
@@ -221,14 +223,20 @@ class Compiler(compiler.Compiler):
         reg_n = max(self.int2reg)
         f = lambda n : self.int2reg.get(n,Deref('rbp',-8*(n-reg_n+1)))
         
-        assign_map = {loc:f(n) for loc,n in colors.items()}
+        colors = {loc:f(n) for loc,n in colors.items()}
+        alloc_reg = set(colors.values())
+        p = [self.allocate_register(i,colors) for i in instrs]
+        used_callee = set.intersection(alloc_reg,self.callee_save)
+        spilled = set(spilled)
         
-        alloc_reg = set(assign_map.values())
-        self.spilled = frozenset(spilled)
-        used_callee.update(set.intersection(alloc_reg,self.callee_save))
-        return X86Program(
-            [self.allocate_register(i,assign_map) for i in p.body]
-        )
+        return p,used_callee,spilled
+    
+    def allocate_registers(self, p: X86Program,
+                           graph: UndirectedAdjList,
+                           used_callee: set[Reg]) -> X86Program:
+        p,used_callee,spilled = self.allocate_instrs(p.body,graph)
+        p,p.used_callee,p.spilled = X86Program(p),used_callee,spilled
+        return p
         
         
 
@@ -246,7 +254,12 @@ class Compiler(compiler.Compiler):
     ###########################################################################
     # Patch Instructions
     ###########################################################################
-
+    def patch_instructions(self,p: X86Program) -> X86Program:
+        # what da hail? like this also can??
+        # propagate the info
+        p,p.used_callee,p.spilled = super().patch_instructions(p),p.used_callee,p.spilled
+        return p
+    
     def patch_instr(self, i: instr) -> list[instr]:
         match i:
             case Instr('movq',[r,w]) if r == w:
@@ -260,8 +273,10 @@ class Compiler(compiler.Compiler):
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         # TODO
         align = lambda n : n+(16-n%16)
-        C = len(self.used_callee)
-        S = len(self.spilled)
+        # C = len(self.used_callee)
+        # S = len(self.spilled)
+        C = len(p.used_callee)
+        S = len(p.spilled)
         A = align(8*S + 8*C) - 8*C
         A = align(A) if A%16 != 0 else A
         

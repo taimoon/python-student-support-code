@@ -19,8 +19,9 @@ class Compiler(Compiler_Lwhile,Compiler_Regalloc):
             '''
             if label != 'conclusion':
                 live_after[label] = {p.body[label][-1]:live_after_blk}
-                live_after[label] = self.uncover_block(p.body[label],live_after[label],live_bf_block)
-                live_bf_block[label] = self.live_before(p.body[label][0],live_after[label],live_bf_block)
+                live_after[label] = self.uncover_block(p.body[label],live_bf_block)
+                s,*_ = p.body[label]
+                live_bf_block[label] = self.live_before(s,live_after[label][s],live_bf_block)
             
             return live_bf_block[label]
         

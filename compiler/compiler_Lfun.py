@@ -434,7 +434,7 @@ class Compiler(Compiler_Ltup):
     def patch_fun(self, defn: FunctionDef) -> FunctionDef:
         match defn:
             case FunctionDef(var,[],blocks,None,IntType(),None):
-                blocks = super().patch_instructions(X86Program(blocks)).body
+                blocks = self.patch_blocks(blocks)
                 _defn = FunctionDef(var,[],blocks,None,IntType(),None)
                 _defn.spilled,_defn.tuples = defn.spilled,defn.tuples
                 return _defn

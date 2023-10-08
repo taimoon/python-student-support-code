@@ -295,7 +295,7 @@ class Compiler(compiler.Compiler):
     
     def assign_homes(self, p: X86Program) -> X86Program:
         p,home = self.assign_homes_spilled(p)
-        self.spilled = set(home.keys())
+        p.spilled = set(home.keys())
         return p
     
     
@@ -311,10 +311,14 @@ class Compiler(compiler.Compiler):
     def patch_instructions(self, p: X86Program) -> X86Program:
         match p:
             case X86Program({**body}):
-                return X86Program({lbl:self.patch_instrs(ss) for lbl,ss in body.items()})
+                p,p.spilled = X86Program(self.patch_blocks(p.body)),p.spilled
+                return p
             case _:
                 raise NotImplementedError('patch_instructions, unknown argument', p)
-        
+
+    def patch_blocks(self, p: dict[str,list[instr]]) -> dict[str,list[instr]]:
+        return {lbl:self.patch_instrs(ss) for lbl,ss in p.items()}
+    
     def patch_instr(self, i: instr) -> list[instr]:
         match i:
             case Instr('cmpq',[arg1,Immediate(v)]):
@@ -335,7 +339,7 @@ class Compiler(compiler.Compiler):
                 return super().patch_instr(i)
     
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
-        sz = len(self.spilled)*8
+        sz = len(p.spilled)*8
         sz = sz if sz%16 == 0 else sz+8
         prelude = [
             Instr('pushq',[Reg('rbp')]),
