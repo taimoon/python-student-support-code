@@ -61,7 +61,8 @@ def test_iftype_error():
 # from compiler.compiler_regalloc_Lwhile import Compiler
 # from compiler.compiler_Ltup import Compiler
 # from compiler.compiler_regalloc_Ltup import Compiler
-from compiler.compiler_Lfun import Compiler
+# from compiler.compiler_Lfun import Compiler
+from compiler.compiler_regalloc_Lfun import Compiler
 
 compiler = Compiler()
 
@@ -76,9 +77,7 @@ if __name__ == '__main__':
         enable_tracing()
     
     if args.run_once is True:
-        path = os.getcwd() + '/tests/fun/map.py'
-        # path = os.getcwd() + '/tmp/infinite.py'
-        
+        path = os.getcwd() + '/tests/fun/tail_divisor.py'
         run_one_test(path,
                     'fun',
                     compiler,
@@ -86,7 +85,6 @@ if __name__ == '__main__':
                     typecheck_dict,
                     interp_dict)
     else:
-        sys.setrecursionlimit(5000)
         name = 'fun'
         run_tests(name, compiler, name,
                 typecheck_dict,

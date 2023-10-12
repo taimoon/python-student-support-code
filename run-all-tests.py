@@ -117,7 +117,7 @@ def test_Ltup():
 def test_Ltup_regalloc():
     from compiler.compiler_regalloc_Ltup import Compiler
     compiler = Compiler()
-    print('compiler_Ltup')
+    print('compiler_Ltup_regalloc')
     names = ['var','if','while','tuple']
     from type_check_Ctup import TypeCheckCtup as TypeCheckC
     typecheck_dict = init_typecheck_dict(type_checkC=TypeCheckC().type_check)
@@ -130,7 +130,13 @@ def test_Lfun():
     names = ['var','if','while','tuple','fun']
     run_all_tests(names,compiler)
     
-
+def test_Lfun_regalloc():
+    from compiler.compiler_regalloc_Lfun import Compiler
+    compiler = Compiler()
+    print('compiler_Lfun_regalloc')
+    names = ['var','if','while','tuple','fun']
+    run_all_tests(names,compiler)
+    
 if __name__ == '__main__':
     test_Lvar()
     test_Lvar_regalloc()
@@ -141,4 +147,4 @@ if __name__ == '__main__':
     test_Ltup()
     test_Ltup_regalloc()
     test_Lfun()
-    
+    test_Lfun_regalloc()

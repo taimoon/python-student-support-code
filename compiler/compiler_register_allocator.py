@@ -124,7 +124,7 @@ class Compiler(compiler.Compiler):
                          live_after: dict[instr, set[location]], 
                          adj: UndirectedAdjList) -> None:
         match i:
-            case Instr('movq'|'movzbq',[s,d]):
+            case Instr('movq'|'movzbq'|'leaq',[s,d]):
                 adj.add_vertex(d)
                 if not isinstance(s,Immediate): adj.add_vertex(s)
                 for v in live_after[i]:
@@ -273,8 +273,6 @@ class Compiler(compiler.Compiler):
     def prelude_and_conclusion(self, p: X86Program) -> X86Program:
         # TODO
         align = lambda n : n+(16-n%16)
-        # C = len(self.used_callee)
-        # S = len(self.spilled)
         C = len(p.used_callee)
         S = len(p.spilled)
         A = align(8*S + 8*C) - 8*C

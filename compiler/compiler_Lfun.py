@@ -437,6 +437,8 @@ class Compiler(Compiler_Ltup):
                 blocks = self.patch_blocks(blocks)
                 _defn = FunctionDef(var,[],blocks,None,IntType(),None)
                 _defn.spilled,_defn.tuples = defn.spilled,defn.tuples
+                if hasattr(defn,'used_callee'):
+                    _defn.used_callee = defn.used_callee
                 return _defn
             case _:
                 raise NotImplementedError('patch_fun')
@@ -471,35 +473,37 @@ class Compiler(Compiler_Ltup):
     def prelude_and_conclusion_each(self, defn:FunctionDef) -> dict[str,list[instr]]:
         match defn:
             case FunctionDef(var,[],blocks,None,IntType(),None):
-                sz = len(defn.spilled)*8
-                sz = sz if sz%16 == 0 else sz+8
+                align = lambda n : n+(16-n%16)
+                restored = [Reg('rbp'),Reg('rsp'),Reg('r15')]
+                used_callee = list(defn.used_callee.difference(restored)) if hasattr(defn,'used_callee') else []
+                C = len(used_callee)
+                S = len(defn.spilled)
+                sz = align(8*S + 8*C) - 8*C
+                
                 root_stack_sz = len(defn.tuples)*8
                 
                 prelude = [
                     Instr('pushq',[Reg('rbp')]),
                     Instr('movq',[Reg('rsp'),Reg('rbp')]),
+                    *[Instr('pushq',[r]) for r in used_callee],
                     Instr('subq',[Immediate(sz),Reg('rsp')]), # room for spilled
                 ]
                 prelude_init_gc = [
                     Instr('movq',[Immediate(2**16),Reg("rdi")]),
                     Instr('movq',[Immediate(2**16),Reg("rsi")]),
-                    Callq("initialize",2), # void initialize(uint64_t rootstack_size, uint64_t heap_size)
+                    Callq("initialize",2),
                     Instr('movq',[Global('rootstack_begin'),Reg('r15')]),
-                    *[Instr('movq',[Immediate(0),Deref('r15',i*8)]) 
-                      for i,*_ in enumerate(defn.tuples)]
                 ] if var == 'main' else []
                 prelude_init_gc += [
                     Instr('addq',[Immediate(root_stack_sz),Reg('r15')]),
                     *[Instr('movq',[Immediate(0),Deref('r15',i*8)]) 
-                      for i,*_ in enumerate(defn.tuples)]
+                      for i,*_ in enumerate(defn.tuples)],
                 ]
                 jmp = [Jump(label_name(var)+'_start'),]
-                
-                conclusion_gc = [
-                    Instr('subq',[Immediate(root_stack_sz),Reg('r15')])
-                ]
                 conclusion = [
+                    Instr('subq',[Immediate(root_stack_sz),Reg('r15')]),
                     Instr('addq',[Immediate(sz),Reg('rsp')]),
+                    *[Instr('popq',[r]) for r in reversed(used_callee)],
                     Instr('popq',[Reg('rbp')]),
                     Instr('retq',[]),
                 ]
@@ -510,6 +514,7 @@ class Compiler(Compiler_Ltup):
                             return [
                                 Instr('subq',[Immediate(root_stack_sz),Reg('r15')]),
                                 Instr('addq',[Immediate(sz),Reg('rsp')]),
+                                *[Instr('popq',[r]) for r in reversed(used_callee)],
                                 Instr('popq',[Reg('rbp')]),
                                 IndirectJump(f),
                             ]
@@ -519,7 +524,7 @@ class Compiler(Compiler_Ltup):
                 from functools import reduce
                 from operator import add
                 blocks[label_name(var)] = prelude + prelude_init_gc + jmp
-                blocks[label_name(var)+'_conclusion'] = conclusion_gc + conclusion
+                blocks[label_name(var)+'_conclusion'] = conclusion
                 blocks = {lbl:reduce(add,(translate_tail(i) for i in instrs)) for lbl,instrs in blocks.items()}
                 
                 return {label_name(var):blocks}
