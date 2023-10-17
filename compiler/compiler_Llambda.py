@@ -4,7 +4,7 @@ from typing import List
 from compiler.compiler import Temporaries
 from x86_ast import *
 from utils import (
-    FunRef,Uninitialized,UncheckedCast,Allocate,
+    FunRef,Uninitialized,UncheckedCast,
     make_assigns, Begin,
     generate_name, Closure,
     AllocateClosure,
@@ -12,7 +12,6 @@ from utils import (
     GlobalValue,Collect,
     )
 from compiler.compiler_Lfun import Compiler as Compiler_Lfun
-from compiler.compiler_regalloc_Ltup import Compiler as Compiler_Regalloc
 
 class Compiler(Compiler_Lfun):
     # shrink pass
@@ -343,6 +342,7 @@ class Compiler(Compiler_Lfun):
         match p:
             case Module([*stmts]):
                 defns = []
+                self.init_global_functions(stmts)
                 p = self.convert_closure_stmts(stmts,defns)
                 return Module(defns + p)
             case _:
@@ -399,6 +399,10 @@ class Compiler(Compiler_Lfun):
                 return Subscript(convert_exp(exp),Constant(i),Load())
             case Call(Name('print'|'input_int'|'len'|'arity'),[*es]):
                 return Call(e.func,[convert_exp(e) for e in es])
+            case Call(FunRef(str(f),int(arity)),[*es]) if self.is_global_function(f):
+                # closure optimization
+                return Call(FunRef(str(f),int(arity)),
+                            [convert_exp(e) for e in [FunRef(str(f),int(arity)),*es]])
             case Call(exp,[*es]):
                 tmp = generate_name('clos.tmp')
                 return Begin([Assign([Name(tmp)],convert_exp(exp))],
@@ -467,6 +471,8 @@ class Compiler(Compiler_Lfun):
                 return t
             case _:
                 raise NotImplementedError(t)
+        
+    
     # limit_functions pass
     def limit_exp(self, e: expr, home: dict[str]) -> expr:
         limit_exp = lambda e: self.limit_exp(e,home)

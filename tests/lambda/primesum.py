@@ -55,6 +55,4 @@ def prime_sum(n:int) -> int:
                       lambda x:x,is_prime,0,2,n)
 
 # 54056763
-# print(prime_sum(32768))
-x = prime_sum(25) # cannot be too big
-print(54056763 if x == 100 else 0)
+print(prime_sum(32768))

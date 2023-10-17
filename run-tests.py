@@ -66,7 +66,8 @@ def test_iftype_error():
 # from compiler.compiler_regalloc_Ltup import Compiler
 # from compiler.compiler_Lfun import Compiler
 # from compiler.compiler_regalloc_Lfun import Compiler
-from compiler.compiler_Llambda import Compiler
+# from compiler.compiler_Llambda import Compiler
+from compiler.compiler_regalloc_Llambda import Compiler
 compiler = Compiler()
 
 if __name__ == '__main__':
@@ -80,7 +81,9 @@ if __name__ == '__main__':
         enable_tracing()
     
     if args.run_once is True:
-        path = os.getcwd() + '/tests/lambda/primesum.py'
+        # path = os.getcwd() + '/tests/lambda/primesum.py'
+        path = os.getcwd() + '/tests/fun/rational.py'
+        path = os.getcwd() + '/tests/fun/tail_divisor.py'
         run_one_test(path,
                     'fun',
                     compiler,
@@ -88,8 +91,19 @@ if __name__ == '__main__':
                     typecheck_dict,
                     interp_dict)
     else:
-        name = 'lambda'
-        run_tests(name, compiler, name,
-                typecheck_dict,
-                interp_dict)
+        from glob import glob
+        for path in glob(os.getcwd() + '/tests/fun/*.py'):
+            if "rational" in path:
+                continue
+            print(path)
+            run_one_test(path,
+                        'fun',
+                        compiler,
+                        'fun',
+                        typecheck_dict,
+                        interp_dict)
+        # name = 'fun'
+        # run_tests(name, compiler, name,
+        #         typecheck_dict,
+        #         interp_dict)
 

@@ -484,7 +484,8 @@ class Compiler(Compiler_Ltup):
                 sz = align(8*S + 8*C) - 8*C
                 
                 root_stack_sz = len(defn.tuples)*8
-                heap_sz = 2**16
+                # heap_sz = 2**16
+                heap_sz = 2**28
                 prelude = [
                     Instr('pushq',[Reg('rbp')]),
                     Instr('movq',[Reg('rsp'),Reg('rbp')]),
