@@ -8,8 +8,8 @@ sys.path.append('../python-student-support-code/interp_x86')
 from utils import (run_tests, run_one_test, enable_tracing)
 from interp_x86.eval_x86 import interp_x86
 
-from type_check_Lfun import TypeCheckLfun as TypeCheckL
-from type_check_Cfun import TypeCheckCfun as TypeCheckC
+from type_check_Llambda import TypeCheckLlambda as TypeCheckL
+from type_check_Clambda import TypeCheckClambda as TypeCheckC
 type_checkC = TypeCheckC().type_check
 type_checkL = TypeCheckL().type_check
 
@@ -18,7 +18,9 @@ def init_typecheck_dict(type_checkL=type_checkL,type_checkC=type_checkC):
         'source': type_checkL,
         'shrink':type_checkL, # get the tuple_types
         'limit_functions':type_checkL,
-        'reveal_functions':type_checkL,
+        'reveal_functions':type_checkL, # get the has_type
+        'convert_assignments':type_checkL,
+        'convert_to_closures':type_checkL,
         'expose_allocation':type_checkL,
         'remove_complex_operands': type_checkL,
         'explicate_control':type_checkC, # get the var_types
@@ -155,4 +157,4 @@ if __name__ == '__main__':
     test_Ltup_regalloc()
     test_Lfun()
     test_Lfun_regalloc()
-    # test_Llambda()
+    test_Llambda()

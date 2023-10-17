@@ -8,7 +8,7 @@ def accumulate(op:Callable[[int,int],int],
     return accumulate(
         op,nxt,f,pred,
         op(init,f(a)) if pred(f(a)) else init,
-        a,b
+        nxt(a),b
     ) if a < b else init
 
 def mul(a:int,b:int) -> int:
@@ -56,5 +56,5 @@ def prime_sum(n:int) -> int:
 
 # 54056763
 # print(prime_sum(32768))
-x = prime_sum(10)
-print(54056763 if True else 0)
+x = prime_sum(25) # cannot be too big
+print(54056763 if x == 100 else 0)
