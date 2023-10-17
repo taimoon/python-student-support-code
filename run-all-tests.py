@@ -136,7 +136,14 @@ def test_Lfun_regalloc():
     print('compiler_Lfun_regalloc')
     names = ['var','if','while','tuple','fun']
     run_all_tests(names,compiler)
-    
+
+def test_Llambda():
+    from compiler.compiler_Llambda import Compiler
+    compiler = Compiler()
+    print('compiler_Lfun_regalloc')
+    names = ['var','if','while','tuple','fun','lambda']
+    run_all_tests(names,compiler)
+
 if __name__ == '__main__':
     test_Lvar()
     test_Lvar_regalloc()
@@ -148,3 +155,4 @@ if __name__ == '__main__':
     test_Ltup_regalloc()
     test_Lfun()
     test_Lfun_regalloc()
+    # test_Llambda()

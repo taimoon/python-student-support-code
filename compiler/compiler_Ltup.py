@@ -106,7 +106,7 @@ class Compiler(Compiler_Lwhile):
             case Compare(left,[op],[right]):
                 return Compare(expose_exp(left),[op],[expose_exp(right)])
             case Call(fn,[*es]):
-                return Call(fn,[expose_exp(e) for e in es])
+                return Call(expose_exp(fn),[expose_exp(e) for e in es])
             case Subscript(tup_exp,Constant(idx),ctx=ctx):
                 return Subscript(expose_exp(tup_exp),Constant(idx),ctx=ctx)
             case Constant()|Name():
@@ -192,6 +192,8 @@ class Compiler(Compiler_Lwhile):
         [7..56],[7:57] = pointer mask
         [57..60] = ???
         [61..63] = unused
+        
+        the copied? tag should be rightmost (big endian)
         '''
         size = '0'*(6 - size.bit_length()) + bin(size)[2:]
         ptr_msk = ''.join(('1' if isinstance(t,TupleType) else '0') for t in reversed(ts.types))

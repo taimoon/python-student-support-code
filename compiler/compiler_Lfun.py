@@ -65,12 +65,13 @@ class Compiler(Compiler_Ltup):
         return Module(self.reveal_stmts(p.body))
     
     def init_global_functions(self, defns:list[FunctionDef]):
-        self._global_functions = set(defn.name for defn in defns).union(
-            ['input_int','print']
-        )
+        self._global_functions = {'len':1,'input_int':0,'print':1,**{defn.name:len(defn.args) for defn in defns}}
     
     def is_global_function(self, name:str) -> bool:
         return name in self._global_functions
+    
+    def arity(self,name:str) -> int:
+        return self._global_functions.get(name,-1)
     
     def reveal_stmts(self,ss: list[stmt]) -> list[stmt]:
         return [self.reveal_stmt(s) for s in ss]
@@ -115,7 +116,7 @@ class Compiler(Compiler_Ltup):
             case UnaryOp(op,_e):
                 return UnaryOp(op,reveal_exp(_e))
             case Name(id) if self.is_global_function(id):
-                return FunRef(id,-1)
+                return FunRef(id,self.arity(id))
             case Constant()|Name():
                 return e
             case _:
@@ -156,6 +157,8 @@ class Compiler(Compiler_Ltup):
                         return Assign([Subscript(Name(tup),Constant(i),Store())],limit_exp(e))
                     case Name(var):
                         return Assign([Name(var)],limit_exp(e))
+            case Assign([Subscript(exp,Constant(i),Store())],e):
+                return Assign([Subscript(limit_exp(exp),Constant(i),Store())],limit_exp(e))
             case _:
                 raise NotImplementedError('limit_stmt, unexpected argument ', s)
     
@@ -187,7 +190,7 @@ class Compiler(Compiler_Ltup):
             case Constant():
                 return e
             case _:
-                raise NotImplementedError('reveal_exp, unexpected argument ',e)
+                raise NotImplementedError('limit_exp, unexpected argument ',e)
     
     ### expose_allocation
     def expose_exp(self, e):
@@ -481,7 +484,7 @@ class Compiler(Compiler_Ltup):
                 sz = align(8*S + 8*C) - 8*C
                 
                 root_stack_sz = len(defn.tuples)*8
-                
+                heap_sz = 2**16
                 prelude = [
                     Instr('pushq',[Reg('rbp')]),
                     Instr('movq',[Reg('rsp'),Reg('rbp')]),
@@ -489,8 +492,8 @@ class Compiler(Compiler_Ltup):
                     Instr('subq',[Immediate(sz),Reg('rsp')]), # room for spilled
                 ]
                 prelude_init_gc = [
-                    Instr('movq',[Immediate(2**16),Reg("rdi")]),
-                    Instr('movq',[Immediate(2**16),Reg("rsi")]),
+                    Instr('movq',[Immediate(heap_sz),Reg("rdi")]),
+                    Instr('movq',[Immediate(heap_sz),Reg("rsi")]),
                     Callq("initialize",2),
                     Instr('movq',[Global('rootstack_begin'),Reg('r15')]),
                 ] if var == 'main' else []
